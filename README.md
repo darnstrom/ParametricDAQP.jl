@@ -1,4 +1,4 @@
-## **ParametricDAQP.jl**
+# **ParametricDAQP.jl**
 
 **ParametricDAQP.jl** solves multi-parametric quadratic programs of the form
 
@@ -14,7 +14,7 @@ where $H \succ 0$ and $\Theta \triangleq \lbrace l \leq \theta \leq u : A_{\thet
 
 The solution $x^*(\theta)$ is a piecewise-affine function over a polyhedral partition.
 
-# Example 
+## Example
 The following code solves the mpQP in Section 7.1 in Bemporad et al. 2002
 ```julia
 using ParametricDAQP
@@ -25,7 +25,7 @@ f_theta = [9.6652 5.2115; 7.0732 -7.0879];
 A = [1.0 0; -1 0; 0 1; 0 -1];
 W = zeros(4,2);
 b = 2*ones(4);
-senses = zeros(Cint,5) # inequality constraints => sense = 0
+senses = zeros(Cint,5); # inequality constraints => sense = 0
 mpQP = (H=H,f=f,f_theta=f_theta,A=A,b=b,W=W,senses=senses);
 
 # Setup parameter region of interest
