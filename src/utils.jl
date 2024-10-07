@@ -39,7 +39,10 @@ function normalize_parameters(prob,Θ)
     for i in 1:nth
         prob.d[i,:] *= norm_factors[i];
     end
-    Θ =(A=norm_factors.*Θ.A, b = Θ.b-(center'*Θ.A)[:], # TODO: verify 
+
+    Ath = haskey(Θ,:A) ? Θ.A : zeros(nth,0);
+    bth = haskey(Θ,:b) ? Θ.b : zeros(0);
+    Θ =(A=norm_factors.*Ath, b = bth-(center'*Ath)[:], # TODO: verify
         lb = -ones(nth), ub = ones(nth));
     return prob, Θ,(center=center, scaling = 1 ./ norm_factors)
 end
@@ -169,7 +172,8 @@ function compute_AS0(mpQP,θ)
     f = mpQP.f[:,1]+mpQP.f_theta*θ
     bu = mpQP.b[:,1]+mpQP.W*θ
     bl = -1e30*ones(length(mpQP.b))
+    senses= haskey(mpQP,:senses) ? mpQP.senses : zeros(Cint,length(mpQP.b));
 
-    _,_,_,info= DAQP.quadprog(mpQP.H,f,mpQP.A ,bu ,bl, mpQP.senses);
+    _,_,_,info= DAQP.quadprog(mpQP.H,f,mpQP.A ,bu ,bl, senses);
     return findall(abs.(info.λ).> 0)
 end
