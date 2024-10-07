@@ -18,8 +18,8 @@ function mpdaqp_explicit(prob,Θ,AS0;opts = EMPCSettings())
 
     # Initialize
     ws=setup_workspace(Θ,m;opts);
-    as0 = as2uint(AS0,eltype(ws.S))
-    push!(ws.S,as0)
+    as0 = as2uint(AS0,eltype(ws.explored))
+    push!(ws.S,(as0,0))
     push!(ws.explored,as0)
     j = 0
 
@@ -43,14 +43,21 @@ function mpdaqp_explicit(prob,Θ,AS0;opts = EMPCSettings())
 
         # Process pending AS
         while(!isempty(ws.S))
-            as = pop!(ws.S);
+            as,parent_id = pop!(ws.S);
             region,LICQ_broken,down= isoptimal(as,ws,prob,opts)
             if(!isnothing(region))
                 push!(ws.F,region)
-                down && push!(ws.Sdown,as)
-                push!(ws.Sup,as)
+                new_id = length(ws.F) 
+                if(parent_id != 0)
+                    push!(ws.adj_list,[parent_id])
+                    push!(ws.adj_list[parent_id],new_id)
+                else
+                    push!(ws.adj_list,[])
+                end
+                down && push!(ws.Sdown,(as,new_id))
+                push!(ws.Sup,(as,new_id))
             end
-            LICQ_broken && push!(ws.Sup,as)
+            LICQ_broken && push!(ws.Sup,(as,parent_id))
         end
 
     end
@@ -60,7 +67,7 @@ function mpdaqp_explicit(prob,Θ,AS0;opts = EMPCSettings())
     opts.verbose>0 && print_final(ws)
     return ws.F, (solve_time = solve_time, nCR = length(ws.F), 
                   nLPs = ws.nLPs, nExplored = length(ws.explored),
-                  status=status)
+                  status=status, adj_list = ws.adj_list)
 end
 ## Check if optimal
 function isoptimal(as,ws,prob,opts)
@@ -134,7 +141,8 @@ function compute_μ(prob,AS,IS,λTH,λC,μTH,μC)
     μC .=  @view prob.d[end,IS]; mul!(μC,MMAI',λC,1,1)
 end
 ## Explore subsets 
-function explore_subsets(as,ws,prob,m,S)
+function explore_subsets(t,ws,prob,m,S)
+    as, parent_id = t
     UIntX = typeof(as)
     for i in 1:m 
         mask = UIntX(1)<<(i-1)
@@ -142,12 +150,13 @@ function explore_subsets(as,ws,prob,m,S)
         as_new = as&~mask
         if as_new ∉ ws.explored
             push!(ws.explored,as_new) # Mark as explored
-            push!(S,as_new)
+            push!(S,(as_new,parent_id))
         end
     end
 end
 ## Explore supersets 
-function explore_supersets(as,ws,prob,m,S)
+function explore_supersets(t,ws,prob,m,S)
+    as, parent_id = t
     UIntX = typeof(as)
     for i in 1:m 
         mask = UIntX(1)<<(i-1);
@@ -156,7 +165,7 @@ function explore_supersets(as,ws,prob,m,S)
         as_new = as|mask
         if as_new ∉ ws.explored
             push!(ws.explored,as_new) # Mark as explored
-            push!(S,as_new) # Put on stack
+            push!(S,(as_new,parent_id)) # Put on stack
         end
     end
 end

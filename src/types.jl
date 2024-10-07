@@ -44,9 +44,9 @@ mutable struct EMPCWorkspace{T<:Integer}
     DAQP_workspace::Ptr{Cvoid}
     ASs::BitMatrix
     nLPs::Int64
-    S::Vector{T}
-    Sdown::Vector{T}
-    Sup::Vector{T}
+    S::Vector{Tuple{T,Int32}}
+    Sdown::Vector{Tuple{T,Int32}}
+    Sup::Vector{Tuple{T,Int32}}
     F::Vector{CriticalRegion}
     explored::Set{T}
     opts::EMPCSettings
@@ -54,4 +54,5 @@ mutable struct EMPCWorkspace{T<:Integer}
     AS::BitVector
     nAS::Int64
     norm_factors:: Vector{Float64}
+    adj_list::Vector{Vector{Int32}}
 end

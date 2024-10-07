@@ -96,8 +96,8 @@ function setup_workspace(Θ,n_constr;opts=EMPCSettings())::EMPCWorkspace
     # (the region is contained in a ball with this radius)
     max_radius =  isempty(Θ.ub) ? nth : nth*(maximum(Θ.ub)^2); 
     ws = EMPCWorkspace{UIntX}(A,b,blower,zeros(Cint,m_max),0,m0,p,falses(0,0),0, 
-                       UIntX[], UIntX[], UIntX[], CriticalRegion[],Set{UIntX}(),opts,
-                       falses(n_constr),falses(n_constr),0, zeros(n_constr));
+                              Tuple{UIntX,Int32}[], Tuple{UIntX,Int32}[], Tuple{UIntX,Int32}[], CriticalRegion[],Set{UIntX}(),opts,
+                              falses(n_constr),falses(n_constr),0, zeros(n_constr), Vector{Int32}[]);
     DAQP.init_c_workspace_ldp(p,ws.Ath,ws.bth,ws.bth_lower,ws.sense;max_radius)
     return ws 
 end
