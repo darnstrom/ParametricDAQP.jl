@@ -54,5 +54,5 @@ mutable struct EMPCWorkspace{T<:Integer}
     AS::BitVector
     nAS::Int64
     norm_factors:: Vector{Float64}
-    adj_list::Vector{Vector{Int32}}
+    parents::Vector{Int32}
 end

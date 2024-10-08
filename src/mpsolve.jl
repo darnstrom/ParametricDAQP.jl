@@ -47,13 +47,8 @@ function mpdaqp_explicit(prob,Θ,AS0;opts = EMPCSettings())
             region,LICQ_broken,down= isoptimal(as,ws,prob,opts)
             if(!isnothing(region))
                 push!(ws.F,region)
+                push!(ws.parents,parent_id)
                 new_id = length(ws.F) 
-                if(parent_id != 0)
-                    push!(ws.adj_list,[parent_id])
-                    push!(ws.adj_list[parent_id],new_id)
-                else
-                    push!(ws.adj_list,[])
-                end
                 down && push!(ws.Sdown,(as,new_id))
                 push!(ws.Sup,(as,new_id))
             end
@@ -67,7 +62,7 @@ function mpdaqp_explicit(prob,Θ,AS0;opts = EMPCSettings())
     opts.verbose>0 && print_final(ws)
     return ws.F, (solve_time = solve_time, nCR = length(ws.F), 
                   nLPs = ws.nLPs, nExplored = length(ws.explored),
-                  status=status, adj_list = ws.adj_list)
+                  status=status, parents = ws.parents)
 end
 ## Check if optimal
 function isoptimal(as,ws,prob,opts)
