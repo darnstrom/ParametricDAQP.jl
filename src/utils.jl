@@ -1,12 +1,24 @@
 ## Setup MPLDP from MPQP
 function MPLDP(mpQP;normalize=true)
-    n, nth = size(mpQP.f_theta) 
+    if hasproperty(mpQP,:f_theta)
+        f_theta = mpQP.f_theta 
+    elseif hasproperty(mpQP,:F)
+        f_theta = mpQP.F
+    end
+
+    if hasproperty(mpQP,:W)
+        W = mpQP.W
+    elseif hasproperty(mpQP,:B)
+        W = mpQP.B
+    end
+
+    n, nth = size(f_theta) 
     m = length(mpQP.b)
 
     R = cholesky((mpQP.H+mpQP.H')/2)
     M = mpQP.A/R.U
-    V = (R.L)\[mpQP.f_theta mpQP.f]
-    d = Matrix(([mpQP.W mpQP.b] + M*V)')# Col. major...
+    V = (R.L)\[f_theta mpQP.f]
+    d = Matrix(([W mpQP.b] + M*V)')# Col. major...
 
     if(normalize)
         norm_factor = 0
