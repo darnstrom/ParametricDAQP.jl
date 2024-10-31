@@ -4,7 +4,7 @@ function mpsolve(mpQP,Θ;opts=Settings(), AS0 = nothing) # bounds_table as optio
     mpLDP = MPLDP(mpQP)
     mpLDP, Θ, tf = normalize_parameters(mpLDP,Θ)
     if(isnothing(AS0))
-        AS0 = compute_AS0(mpQP,tf.center)
+        AS0 = compute_AS0(mpLDP,Θ)
     end
     F,info =  mpdaqp_explicit(mpLDP,Θ,AS0;opts)
     return F, merge(info,(scaling=tf.scaling,translation=tf.center))

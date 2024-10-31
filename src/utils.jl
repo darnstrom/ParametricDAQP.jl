@@ -168,12 +168,9 @@ function extract_CR(ws,prob,λTH,λC)
     return CriticalRegion(AS,Ath,bth,xTH,xC,θ),false
 end
 ## Compute AS0 
-function compute_AS0(mpQP,θ)
-    f = mpQP.f[:,1]+mpQP.f_theta*θ
-    bu = mpQP.b[:,1]+mpQP.W*θ
-    bl = -1e30*ones(length(mpQP.b))
-    senses= haskey(mpQP,:senses) ? mpQP.senses : zeros(Cint,length(mpQP.b));
-
-    _,_,_,info= DAQP.quadprog(mpQP.H,f,mpQP.A ,bu ,bl, senses);
+function compute_AS0(mpLDP,Θ)
+    # Center in box is zero -> dtot = d[end,:]
+    _,_,_,info= DAQP.quadprog(zeros(0,0),zeros(0),mpLDP.M,mpLDP.d[end,:]);
     return findall(abs.(info.λ).> 0)
+    # TODO add backup if this fails
 end
