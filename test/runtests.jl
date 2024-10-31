@@ -39,7 +39,7 @@ end
     n,m,nth = 5,20,6
     tol = 1e-5
 
-    opts = ParametricDAQP.EMPCSettings()
+    opts = ParametricDAQP.Settings()
     opts.store_points=true
 
 
@@ -86,7 +86,7 @@ end
                 A=A,b=b,W=W,bounds_table=bounds_table,senses=senses)
     Θ = (A = zeros(nth,0), b=zeros(0), ub=2*ones(nth),lb=-2*ones(nth)) 
 
-    opts = ParametricDAQP.EMPCSettings()
+    opts = ParametricDAQP.Settings()
     opts.verbose=1;
     opts.eps_gap = 0
     opts.postcheck_rank=true
@@ -114,7 +114,7 @@ end
                 A=A,b=b,W=W,bounds_table=bounds_table,senses=senses)
     Θ = (A = zeros(nth,0), b=zeros(0), ub=1.5*ones(nth),lb=-1.5*ones(nth)) 
 
-    opts = ParametricDAQP.EMPCSettings()
+    opts = ParametricDAQP.Settings()
     opts.verbose=1;
     opts.store_points=true
     F,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
@@ -142,7 +142,7 @@ end
                 A=A,b=b,W=W,bounds_table=bounds_table,senses=senses)
     Θ = (A = zeros(nth,0), b=zeros(0), ub=5*ones(nth),lb=1*ones(nth)) 
 
-    opts = ParametricDAQP.EMPCSettings()
+    opts = ParametricDAQP.Settings()
     opts.verbose=1;
     opts.store_points=true
     opts.eps_gap = 1e-7
@@ -164,6 +164,6 @@ end
     Θ = (ub=ub,lb=lb)
 
     # Solve mpQP over desired region
-    opts = ParametricDAQP.EMPCSettings()
+    opts = ParametricDAQP.Settings()
     F,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
 end

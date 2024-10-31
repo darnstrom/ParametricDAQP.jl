@@ -57,7 +57,7 @@ end
 
 ## Setup workspace
 # If ub/lb is not set, assume -1 ≤ θ ≤ 1 
-function setup_workspace(Θ,n_constr;opts=EMPCSettings())::EMPCWorkspace
+function setup_workspace(Θ,n_constr;opts=Settings())::Workspace
     nth,n_general = size(Θ.A);
     m0 = isempty(Θ.ub) ? n_general : 2*nth+n_general;
     m_max = m0+n_constr
@@ -95,7 +95,7 @@ function setup_workspace(Θ,n_constr;opts=EMPCSettings())::EMPCWorkspace
     # Set fval_bound to maximal radius for early termination
     # (the region is contained in a ball with this radius)
     max_radius =  isempty(Θ.ub) ? nth : nth*(maximum(Θ.ub)^2); 
-    ws = EMPCWorkspace{UIntX}(A,b,blower,zeros(Cint,m_max),0,m0,p,falses(0,0),0, 
+    ws = Workspace{UIntX}(A,b,blower,zeros(Cint,m_max),0,m0,p,falses(0,0),0, 
                        UIntX[], UIntX[], UIntX[], CriticalRegion[],Set{UIntX}(),opts,
                        falses(n_constr),falses(n_constr),0, zeros(n_constr));
     DAQP.init_c_workspace_ldp(p,ws.Ath,ws.bth,ws.bth_lower,ws.sense;max_radius)

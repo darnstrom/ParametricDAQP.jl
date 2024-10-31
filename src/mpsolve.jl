@@ -1,6 +1,6 @@
 ## mpsolve 
 # Compute the explicit solution to multi-parameteric QP
-function mpsolve(mpQP,Θ;opts=EMPCSettings(), AS0 = nothing) # bounds_table as option
+function mpsolve(mpQP,Θ;opts=Settings(), AS0 = nothing) # bounds_table as option
     mpLDP = MPLDP(mpQP)
     mpLDP, Θ, tf = normalize_parameters(mpLDP,Θ)
     if(isnothing(AS0))
@@ -10,7 +10,7 @@ function mpsolve(mpQP,Θ;opts=EMPCSettings(), AS0 = nothing) # bounds_table as o
     return F, merge(info,(scaling=tf.scaling,translation=tf.center))
 end
 ## Method based on combinatorial adjacency 
-function mpdaqp_explicit(prob,Θ,AS0;opts = EMPCSettings())
+function mpdaqp_explicit(prob,Θ,AS0;opts = Settings())
     time_limit = opts.time_limit*1e9;
     status = :Solved
     t0  = time_ns()

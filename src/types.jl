@@ -19,7 +19,7 @@ struct MPLDP
     bounds_table::Vector{Int64}
 end
 
-Base.@kwdef mutable struct EMPCSettings 
+Base.@kwdef mutable struct Settings 
     eps_zero::Float64 = 1e-12
     eps_gap::Float64  = 1e-6-1e-12
     verbose::Int64 = 1 
@@ -34,7 +34,7 @@ Base.@kwdef mutable struct EMPCSettings
     lowdim_tol::Float64 = 0 
 end
 
-mutable struct EMPCWorkspace{T<:Integer}
+mutable struct Workspace{T<:Integer}
     Ath::Matrix{Float64}
     bth::Vector{Float64}
     bth_lower::Vector{Float64}
@@ -49,7 +49,7 @@ mutable struct EMPCWorkspace{T<:Integer}
     Sup::Vector{T}
     F::Vector{CriticalRegion}
     explored::Set{T}
-    opts::EMPCSettings
+    opts::Settings
     IS::BitVector
     AS::BitVector
     nAS::Int64
