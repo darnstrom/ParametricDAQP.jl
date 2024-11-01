@@ -34,6 +34,20 @@ Base.@kwdef mutable struct Settings
     lowdim_tol::Float64 = 0 
 end
 
+Settings(opts::Nothing) = Settings()
+Settings(opts::Settings) = opts
+function Settings(opts::Dict)
+    out = Settings()
+    for (key,value) in opts
+        if hasproperty(out, Symbol(key))
+            setproperty!(out, Symbol(key), value)
+        else
+            @warn "$key is not a valid setting"
+        end
+    end
+    return out
+end
+
 mutable struct Workspace{T<:Integer}
     Ath::Matrix{Float64}
     bth::Vector{Float64}

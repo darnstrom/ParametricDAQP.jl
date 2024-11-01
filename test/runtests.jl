@@ -114,9 +114,7 @@ end
                 A=A,b=b,W=W,bounds_table=bounds_table,senses=senses)
     Θ = (A = zeros(nth,0), b=zeros(0), ub=1.5*ones(nth),lb=-1.5*ones(nth)) 
 
-    opts = ParametricDAQP.Settings()
-    opts.verbose=1;
-    opts.store_points=true
+    opts = Dict("store_points"=>true, "verbose"=>1)
     F,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
     @test length(F) == 27
 end

@@ -1,11 +1,12 @@
 ## mpsolve 
 # Compute the explicit solution to multi-parameteric QP
-function mpsolve(mpQP,Θ;opts=Settings(), AS0 = nothing) # bounds_table as option
+function mpsolve(mpQP,Θ;opts=nothing, AS0 = nothing) # bounds_table as option
     mpLDP = MPLDP(mpQP)
     mpLDP, Θ, tf = normalize_parameters(mpLDP,Θ)
     if(isnothing(AS0))
         AS0 = compute_AS0(mpLDP,Θ)
     end
+    opts = Settings(opts)
     F,info =  mpdaqp_explicit(mpLDP,Θ,AS0;opts)
     return F, merge(info,(scaling=tf.scaling,translation=tf.center))
 end
