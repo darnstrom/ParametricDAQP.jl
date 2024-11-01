@@ -3,6 +3,7 @@ mutable struct CriticalRegion
     Ath::Matrix{Float64}
     bth::Vector{Float64}
     x::Matrix{Float64}
+    lam::Matrix{Float64}
     th::Vector{Float64}
 end
 
@@ -15,6 +16,7 @@ struct MPLDP
     n_theta::Int64
     n::Int64
     bounds_table::Vector{Int64}
+    norm_factors::Vector{Float64}
 end
 
 Base.@kwdef mutable struct Settings 
@@ -23,6 +25,7 @@ Base.@kwdef mutable struct Settings
     store_AS::Bool = true
     store_points::Bool = false
     store_regions::Bool = true
+    store_dual::Bool = false
     remove_redundant::Bool = true
     time_limit::Int64 = 1e5
     chunk_size::Int64 = 1e3 

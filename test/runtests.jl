@@ -41,6 +41,7 @@ end
 
     opts = ParametricDAQP.Settings()
     opts.store_points=true
+    opts.store_dual=true
 
 
     mpQP,Θ = generate_mpQP(n,m,nth)
@@ -50,19 +51,22 @@ end
     N = 10000
     ths = 2*rand(nth,N).-1;
     containment_inds = zeros(Int,N) 
-    errs = zeros(N) 
+    errs_primal,errs_dual = zeros(N),zeros(N)
     for n = 1:N
         θ = ths[:,n]
         inds = pointlocation(θ,F);
         containment_inds[n]=length(inds)
+        AS = F[inds[1]].AS
         xsol = F[inds[1]].x'*[θ;1]
+        λsol = F[inds[1]].lam'*[θ;1]
         f = mpQP.f[:,1]+mpQP.f_theta*θ
         b = mpQP.b[:,1]+mpQP.W*θ
         xref,~,~,info= DAQP.quadprog(mpQP.H,f,mpQP.A,b,-1e30*ones(2m),mpQP.senses);
-        AS0 = findall(info.λ.!=0)
-        errs[n] = norm(xsol-xref) 
+        errs_primal[n] = norm(xsol-xref) 
+        errs_dual[n] = norm(λsol-info.λ[F[inds[1]].AS]) 
     end
-    @test all(errs.< tol)
+    @test all(errs_primal.< tol)
+    @test all(errs_dual.< tol)
     @test ~any(containment_inds.==0) # No holes
     @test sum(containment_inds.>1) < 0.01*N # Not more than 1% overlap
 end

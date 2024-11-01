@@ -20,19 +20,21 @@ function MPLDP(mpQP;normalize=true)
     V = (R.L)\[f_theta mpQP.f]
     d = Matrix(([W mpQP.b] + M*V)')# Col. major...
 
+    norm_factors = ones(m)
     if(normalize)
         norm_factor = 0
         for i in 1:m
             norm_factor = norm(view(M,i,:),2) 
             M[i,:]./=norm_factor
             d[:,i]./=norm_factor
+            norm_factors[i]= norm_factor
         end
     end
 
     bnd_tbl = haskey(mpQP,:bounds_table) ? mpQP.bounds_table : collect(1:m)
     haskey(mpQP,:out_inds) && (MRt = MRt[:,mpQP.out_inds])
 
-    return MPLDP(M*M', M, (M/R.L), -(R.U\V)', d, nth, n, bnd_tbl)
+    return MPLDP(M*M', M, (M/R.L), -(R.U\V)', d, nth, n, bnd_tbl, norm_factors)
 end
 
 ## Normalize parameters to -1 ≤ θ ≤ 1
@@ -163,16 +165,27 @@ function extract_CR(ws,prob,λTH,λC)
         else
             Ath,bth = ws.Ath[:,1:ws.m],ws.bth[1:ws.m];
         end
-        # Compute primal solution x[1:end-1,:]' θ + x[end,:]
-        MRt = ws.norm_factors[1:ws.nAS].*prob.MRt[ws.AS,:]
+        # Renormalize dual variable from half-plane normalization
         λ = [λTH;-λC']
-        x = copy(prob.RinvV); mul!(x,λ,MRt,1,1)
+        for i in 1:ws.nAS
+            rmul!(view(λ,:,i),ws.norm_factors[i])
+        end
+
+        # Compute primal solution x[1:end-1,:]' θ + x[end,:]
+        x = copy(prob.RinvV); mul!(x,λ,prob.MRt[ws.AS,:],1,1)
+ 
+        # Renormalize dual variable from LDP transform
+        if ws.opts.store_dual & ws.opts.store_AS
+            for (i,ASi) in enumerate(AS)
+                rdiv!(view(λ,:,i),-prob.norm_factors[ASi])
+            end
+        end
     else
         Ath,bth = zeros(prob.n_theta,0), zeros(0)
         x,λ = zeros(0,0),zeros(0,0);
     end
 
-    return CriticalRegion(AS,Ath,bth,x,θ),false
+    return CriticalRegion(AS,Ath,bth,x,λ,θ),false
 end
 ## Compute AS0 
 function compute_AS0(mpLDP,Θ)
