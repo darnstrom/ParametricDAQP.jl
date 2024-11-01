@@ -95,7 +95,7 @@ function isoptimal(as,ws,prob,opts)
     # Reset feasibility workspace
     reset_workspace(ws) 
     # Solve primal+dual feasibility problem 
-    normalize_model(ws;eps_gap=opts.eps_gap,eps_zero=opts.eps_zero) || return nothing,false,false;
+    normalize_model(ws;eps_zero=opts.eps_zero) || return nothing,false,false;
 
     ws.nLPs+=1
     if isfeasible(ws.DAQP_workspace, ws.m, 0)
@@ -105,7 +105,7 @@ function isoptimal(as,ws,prob,opts)
     end
 end
 ## Update optimization model
-function normalize_model(ws;eps_gap=1e-6,eps_zero=1e-12)
+function normalize_model(ws;eps_zero=1e-12)
     norm_factor=0.0;
     # add λ ≥ 0 to feasibility model
     for i in (1+ws.m0: ws.m0+length(ws.AS))
@@ -114,7 +114,6 @@ function normalize_model(ws;eps_gap=1e-6,eps_zero=1e-12)
         if(norm_factor>eps_zero)
             rdiv!(view(ws.Ath,:,i),norm_factor)
             ws.bth[i]/=norm_factor
-            ws.bth[i]-=eps_gap
             ws.sense[i] = 0
         else
             (ws.bth[i]<-eps_zero) && return false # trivially infeasible 

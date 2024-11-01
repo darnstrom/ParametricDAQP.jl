@@ -53,7 +53,7 @@ end
     errs = zeros(N) 
     for n = 1:N
         θ = ths[:,n]
-        inds = pointlocation(θ,F;eps_gap=opts.eps_gap);
+        inds = pointlocation(θ,F);
         containment_inds[n]=length(inds)
         xsol = F[inds[1]].xTH'*θ+F[inds[1]].xC
         f = mpQP.f[:,1]+mpQP.f_theta*θ
@@ -88,7 +88,6 @@ end
 
     opts = ParametricDAQP.Settings()
     opts.verbose=1;
-    opts.eps_gap = 0
     opts.postcheck_rank=true
     F,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
 end
@@ -143,7 +142,6 @@ end
     opts = ParametricDAQP.Settings()
     opts.verbose=1;
     opts.store_points=true
-    opts.eps_gap = 1e-7
     F,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
 end
 

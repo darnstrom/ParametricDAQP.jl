@@ -170,7 +170,6 @@ function extract_CR(ws,prob,λTH,λC)
         # Compute primal solution xTH θ + xC 
         MRt = ws.norm_factors[1:ws.nAS].*prob.MRt[ws.AS,:]
         xTH = copy(prob.vTH); mul!(xTH,λTH,MRt,1,1) 
-        λC .+= ws.opts.eps_gap; # Shift back (ok since ws.Ath already copied 
         xC = copy(prob.vC); mul!(xC,MRt',λC,-1,1)
     else
         Ath,bth = zeros(prob.n_theta,0), zeros(0)

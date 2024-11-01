@@ -21,7 +21,6 @@ end
 
 Base.@kwdef mutable struct Settings 
     eps_zero::Float64 = 1e-12
-    eps_gap::Float64  = 1e-6-1e-12
     verbose::Int64 = 1 
     store_AS::Bool = true
     store_points::Bool = false
