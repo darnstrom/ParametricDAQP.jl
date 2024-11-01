@@ -2,8 +2,7 @@ mutable struct CriticalRegion
     AS::Vector{Int16}
     Ath::Matrix{Float64}
     bth::Vector{Float64}
-    xTH::Matrix{Float64}
-    xC::Vector{Float64}
+    x::Matrix{Float64}
     th::Vector{Float64}
 end
 
@@ -11,8 +10,7 @@ struct MPLDP
     MM::Matrix{Float64}
     M::Matrix{Float64}
     MRt::Matrix{Float64}
-    vTH::Matrix{Float64}
-    vC::Vector{Float64}
+    RinvV::Matrix{Float64}
     d::Matrix{Float64}
     n_theta::Int64
     n::Int64

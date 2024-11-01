@@ -55,7 +55,7 @@ end
         θ = ths[:,n]
         inds = pointlocation(θ,F);
         containment_inds[n]=length(inds)
-        xsol = F[inds[1]].xTH'*θ+F[inds[1]].xC
+        xsol = F[inds[1]].x'*[θ;1]
         f = mpQP.f[:,1]+mpQP.f_theta*θ
         b = mpQP.b[:,1]+mpQP.W*θ
         xref,~,~,info= DAQP.quadprog(mpQP.H,f,mpQP.A,b,-1e30*ones(2m),mpQP.senses);

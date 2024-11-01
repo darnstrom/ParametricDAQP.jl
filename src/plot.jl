@@ -7,7 +7,7 @@ using RecipesBase
     vs=PolyDAQP.vrep_2d(minrep(slice(r.Ath,r.bth,collect(3:nth))...)...)
     nv = length(vs)
     x,y = first.(vs),last.(vs)
-    z = [r.xTH[:,1]'*[v;zeros(nth-2)] + r.xC[1] for v in vs]
+    z = [r.x[:,1]'*[v;zeros(nth-2);1] for v in vs]
     connections--> (zeros(Int, nv-2),collect(1:nv-2),collect(2:nv-1))
     return x,y,z 
 end
@@ -27,8 +27,8 @@ end
             nv = length(vs)
             nv < 2 && continue
             x,y = first.(vs), last.(vs)
-            c = r.xTH[ids,uid]'*values + r.xC[uid] 
-            z = [r.xTH[free_ids,uid]'*v + c for v in vs]
+            c = r.x[ids,uid]'*values + r.x[end,:]
+            z = [r.x[free_ids,uid]'*v + c for v in vs]
             @series begin
                 st --> :mesh3d 
                 legend --> false
@@ -56,8 +56,8 @@ function pplot(rs::Vector{CriticalRegion};uid=0, fix_ids = nothing, fix_vals=not
         isempty(p) && continue
         push!(ps,p)
         uid == 0 && continue
-        c = r.xTH[ids,uid]'*values + r.xC[uid]
-        push!(fs,v->c+r.xTH[free_ids,uid]'*v)
+        c = r.x[ids,uid]'*values + r.x[end,:]
+        push!(fs,v->c+r.x[free_ids,uid]'*v)
     end
     PolyDAQP.pplot(ps;fs,opts)
 end
