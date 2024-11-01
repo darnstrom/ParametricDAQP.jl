@@ -32,6 +32,5 @@ ub,lb  = 1.5*ones(2), -1.5*ones(2);
 Θ = (ub=ub,lb=lb);
 
 # Solve mpQP over desired region
-opts = ParametricDAQP.EMPCSettings();
-F,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
+sol,info = ParametricDAQP.mpsolve(mpQP,Θ);
 ```

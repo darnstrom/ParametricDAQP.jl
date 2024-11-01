@@ -83,12 +83,9 @@ end
          0 -1;] -ones(4,1) 0.5*ones(4,1)]
     b = -ones(4,1)
     B = [1.0 0; -1 0; 0 -1; 1 1];
-    #bounds_table = [collect(m+1:2m);collect(1:m)]
-    bounds_table = collect(1:length(b))
-    senses = zeros(Cint,length(b))
-    mpQP = (H=H,f=f,F=F,H_theta=zeros(0,0),
-                A=A,b=b,B=B,bounds_table=bounds_table,senses=senses)
-    Θ = (A = zeros(nth,0), b=zeros(0), ub=2*ones(nth),lb=-2*ones(nth)) 
+    mpQP = (H=H,f=f,F=F,
+            A=A,b=b,B=B)
+    Θ = (ub=2*ones(nth),lb=-2*ones(nth)) 
 
     opts = ParametricDAQP.Settings()
     opts.verbose=1;
@@ -110,12 +107,10 @@ end
          -3/4 -16/25 -1]
     b = -ones(6);
     B = [1.0 0; -1 0; 0 -1; 0 1;1 0; -1 0]
-    #bounds_table = [collect(m+1:2m);collect(1:m)]
-    bounds_table = collect(1:6)
-    senses = zeros(Cint,6)
-    mpQP = (H=H,f=f,F=F,H_theta=zeros(0,0),
-                A=A,b=b,B=B,bounds_table=bounds_table,senses=senses)
-    Θ = (A = zeros(nth,0), b=zeros(0), ub=1.5*ones(nth),lb=-1.5*ones(nth)) 
+
+    mpQP = (H=H,f=f,F=F,
+            A=A,b=b,B=B)
+    Θ = (ub=1.5*ones(nth),lb=-1.5*ones(nth)) 
 
     opts = Dict("store_points"=>true, "verbose"=>1)
     F,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
@@ -133,15 +128,12 @@ end
          0 -1;
          1 1;
          -1 0]
-
     b = [0;0;-1.0;3;-1]
     B = [[-0.5; -0.5; 0; 0; 0] zeros(5,0)]
-    #bounds_table = [collect(m+1:2m);collect(1:m)]
-    bounds_table = collect(1:5)
-    senses = zeros(Cint,5)
-    mpQP = (H=H,f=f,F=F,H_theta=zeros(0,0),
-                A=A,b=b,B=B,bounds_table=bounds_table,senses=senses)
-    Θ = (A = zeros(nth,0), b=zeros(0), ub=5*ones(nth),lb=1*ones(nth)) 
+
+    mpQP = (H=H,f=f,F=F,
+            A=A,b=b,B=B)
+    Θ = (ub=5*ones(nth),lb=1*ones(nth)) 
 
     opts = ParametricDAQP.Settings()
     opts.verbose=1;
