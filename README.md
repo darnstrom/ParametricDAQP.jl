@@ -4,8 +4,8 @@
 
 $$
 \begin{align}
-\min_{x} &  ~\frac{1}{2}x^{T}Hx+(f+f_{\theta} \theta)^{T}x \\
-\text{s.t.} & ~A x \leq b + W \theta \\
+\min_{x} &  ~\frac{1}{2}x^{T}Hx+(f+F \theta)^{T}x \\
+\text{s.t.} & ~A x \leq b + B \theta \\
 & ~\theta \in \Theta
 \end{align}
 $$

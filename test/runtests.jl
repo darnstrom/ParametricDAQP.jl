@@ -8,16 +8,16 @@ function generate_mpQP(n,m,nth)
     M = randn(n,n)
     H = M*M'
     f = randn(n,1)
-    f_theta = randn(n,nth)
+    F = randn(n,nth)
     A = randn(m,n)
     b = [rand(m,1);rand(m,1)]
     F0 = randn(n,nth); # The point F0*th will be primal feasible
-    W =[A;-A]*(-F0);
+    B =[A;-A]*(-F0);
     #bounds_table = [collect(m+1:2m);collect(1:m)]
     bounds_table = collect(1:2m)
     senses = zeros(Cint,2m)
-    mpQP = (H=H,f=f,f_theta=f_theta,H_theta=zeros(0,0),
-                A=[A;-A],b=b,W=W,bounds_table=bounds_table,senses=senses)
+    mpQP = (H=H,f=f,F=F,H_theta=zeros(0,0),
+                A=[A;-A],b=b,B=B,bounds_table=bounds_table,senses=senses)
 
     P_theta = (A = zeros(nth,0), b=zeros(0), ub=ones(nth),lb=-ones(nth),F0=F0) 
 
@@ -59,8 +59,8 @@ end
         AS = F[inds[1]].AS
         xsol = F[inds[1]].x'*[θ;1]
         λsol = F[inds[1]].lam'*[θ;1]
-        f = mpQP.f[:,1]+mpQP.f_theta*θ
-        b = mpQP.b[:,1]+mpQP.W*θ
+        f = mpQP.f[:,1]+mpQP.F*θ
+        b = mpQP.b[:,1]+mpQP.B*θ
         xref,~,~,info= DAQP.quadprog(mpQP.H,f,mpQP.A,b,-1e30*ones(2m),mpQP.senses);
         errs_primal[n] = norm(xsol-xref) 
         errs_dual[n] = norm(λsol-info.λ[F[inds[1]].AS]) 
@@ -76,18 +76,18 @@ end
     n, nth = 4,2
     H = diagm(ones(n)) 
     f = zeros(n,1)
-    f_theta = zeros(n,nth)
+    F = zeros(n,nth)
     A = [[1 0;
          -1 0;
          0 1;
          0 -1;] -ones(4,1) 0.5*ones(4,1)]
     b = -ones(4,1)
-    W = [1.0 0; -1 0; 0 -1; 1 1];
+    B = [1.0 0; -1 0; 0 -1; 1 1];
     #bounds_table = [collect(m+1:2m);collect(1:m)]
     bounds_table = collect(1:length(b))
     senses = zeros(Cint,length(b))
-    mpQP = (H=H,f=f,f_theta=f_theta,H_theta=zeros(0,0),
-                A=A,b=b,W=W,bounds_table=bounds_table,senses=senses)
+    mpQP = (H=H,f=f,F=F,H_theta=zeros(0,0),
+                A=A,b=b,B=B,bounds_table=bounds_table,senses=senses)
     Θ = (A = zeros(nth,0), b=zeros(0), ub=2*ones(nth),lb=-2*ones(nth)) 
 
     opts = ParametricDAQP.Settings()
@@ -101,7 +101,7 @@ end
     n, nth = 3,2
     H = diagm(ones(n)) 
     f = zeros(n,1)
-    f_theta = zeros(n,nth)
+    F = zeros(n,nth)
     A = [1 0 -1;
          -1 0 -1;
          0 1 -1;
@@ -109,12 +109,12 @@ end
          3/4 16/25 -1;
          -3/4 -16/25 -1]
     b = -ones(6);
-    W = [1.0 0; -1 0; 0 -1; 0 1;1 0; -1 0]
+    B = [1.0 0; -1 0; 0 -1; 0 1;1 0; -1 0]
     #bounds_table = [collect(m+1:2m);collect(1:m)]
     bounds_table = collect(1:6)
     senses = zeros(Cint,6)
-    mpQP = (H=H,f=f,f_theta=f_theta,H_theta=zeros(0,0),
-                A=A,b=b,W=W,bounds_table=bounds_table,senses=senses)
+    mpQP = (H=H,f=f,F=F,H_theta=zeros(0,0),
+                A=A,b=b,B=B,bounds_table=bounds_table,senses=senses)
     Θ = (A = zeros(nth,0), b=zeros(0), ub=1.5*ones(nth),lb=-1.5*ones(nth)) 
 
     opts = Dict("store_points"=>true, "verbose"=>1)
@@ -127,7 +127,7 @@ end
     n, nth = 2,1
     H = diagm(ones(n)) 
     f = zeros(n,1)
-    f_theta = zeros(n,nth)
+    F = zeros(n,nth)
     A = [0 -1.0;
          -1.0 0;
          0 -1;
@@ -135,12 +135,12 @@ end
          -1 0]
 
     b = [0;0;-1.0;3;-1]
-    W = [[-0.5; -0.5; 0; 0; 0] zeros(5,0)]
+    B = [[-0.5; -0.5; 0; 0; 0] zeros(5,0)]
     #bounds_table = [collect(m+1:2m);collect(1:m)]
     bounds_table = collect(1:5)
     senses = zeros(Cint,5)
-    mpQP = (H=H,f=f,f_theta=f_theta,H_theta=zeros(0,0),
-                A=A,b=b,W=W,bounds_table=bounds_table,senses=senses)
+    mpQP = (H=H,f=f,F=F,H_theta=zeros(0,0),
+                A=A,b=b,B=B,bounds_table=bounds_table,senses=senses)
     Θ = (A = zeros(nth,0), b=zeros(0), ub=5*ones(nth),lb=1*ones(nth)) 
 
     opts = ParametricDAQP.Settings()
@@ -153,11 +153,11 @@ end
     # Setup mpQP
     H =  [1.5064 0.4838; 0.4838 1.5258];
     f = zeros(2,1)
-    f_theta = [9.6652 5.2115; 7.0732 -7.0879];
+    F = [9.6652 5.2115; 7.0732 -7.0879];
     A = [1.0 0; -1 0; 0 1; 0 -1];
-    W = zeros(4,2);
+    B = zeros(4,2);
     b = 2*ones(4);
-    mpQP = (H=H,f=f,f_theta=f_theta,A=A,b=b,W=W)
+    mpQP = (H=H,f=f,F=F,A=A,b=b,B=B)
 
     # Setup parameter region of interest
     ub,lb  = 1.5*ones(2), -1.5*ones(2)
