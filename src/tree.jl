@@ -19,7 +19,7 @@ function get_halfplanes(CRs)
     for (reg_id,cr) in enumerate(CRs)
         for (i,a) = enumerate(eachcol(cr.Ath))
             # Disregard box bounds
-            cr.bth[i] == 1 && sum(==(0),a) == 1 && continue
+            cr.bth[i] == 1 && sum(!=(0),a) == 1 && continue
             asign = sign(a[findfirst(!=(0),a)])
             hcand = asign*[a;cr.bth[i]]
             # Check if hcand already exists in hps
