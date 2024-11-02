@@ -149,7 +149,7 @@ function build_tree(CRs)
         if length(fb_cands)!=1 
             push!(U,(new_nregs,branches ∪ [(hp_id,-1)], next_id))
         else
-            jump_list[next_id] = 0 
+            jump_list[next_id] = 1 # pointing at root node -> leaf
             hp_list[next_id] = first(fb_cands) 
         end
 
@@ -157,7 +157,7 @@ function build_tree(CRs)
         if length(fb_cands)!=1 
             push!(U,(new_pregs,branches ∪ [(hp_id,1)], next_id+1))
         else
-            jump_list[next_id+1] = 0 
+            jump_list[next_id+1] = 1 # pointing at root node -> leaf
             hp_list[next_id+1] = first(fb_cands) 
         end
     end
@@ -167,7 +167,7 @@ end
 function evaluate(bst::BinarySearchTree,θ)
     id =  1 # start in root note
     next_id = bst.jump_list[id]
-    while next_id != 0 
+    while next_id != 1
         hid = bst.hp_list[id]  
         if bst.halfplanes[1:end-1,hid]'*θ  ≤ bst.halfplanes[end,hid] 
             id = next_id+1 
