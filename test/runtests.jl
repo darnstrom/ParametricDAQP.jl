@@ -158,4 +158,19 @@ end
     # Solve mpQP over desired region
     opts = ParametricDAQP.Settings()
     F,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
+    bst = ParametricDAQP.build_tree(F)
+
+    # Compare bst with QP solution
+    N = 1000
+    ths = 1.5*(2*rand(2,N).-1);
+    errs = zeros(N)
+    for n = 1:N
+        θ = ths[:,n]
+        xbst = ParametricDAQP.evaluate(bst,θ./ub)
+        f = mpQP.f[:,1]+mpQP.F*θ
+        b = mpQP.b[:,1]+mpQP.B*θ
+        xref,~,~,info= DAQP.quadprog(mpQP.H,f,mpQP.A,b);
+        errs[n] = norm(xref-xbst)
+    end
+    @test all(errs.< 1e-5)
 end
