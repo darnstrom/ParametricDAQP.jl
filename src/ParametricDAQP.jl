@@ -9,5 +9,6 @@ include("mpsolve.jl")
 include("io.jl")
 include("plot.jl")
 include("tree.jl")
+include("codegen.jl")
 
 end # module ParametricDAQP
