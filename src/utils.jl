@@ -32,9 +32,15 @@ function MPLDP(mpQP;normalize=true)
     end
 
     bnd_tbl = haskey(mpQP,:bounds_table) ? mpQP.bounds_table : collect(1:m)
-    haskey(mpQP,:out_inds) && (MRt = MRt[:,mpQP.out_inds])
 
-    return MPLDP(M*M', M, (M/R.L), -(R.U\V)', d, nth, n, bnd_tbl, norm_factors)
+    MRt = M/R.L
+    RinvV = -(R.U\V)'
+    if haskey(mpQP,:out_inds)
+        MRt = MRt[:,mpQP.out_inds]
+        RinvV = RinvV[:,mpQP.out_inds]
+    end
+
+    return MPLDP(M*M', M, MRt, RinvV, d, nth, n, bnd_tbl, norm_factors)
 end
 
 ## Normalize parameters to -1 ≤ θ ≤ 1
