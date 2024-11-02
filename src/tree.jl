@@ -62,7 +62,7 @@ function get_feedbacks(CRs; tol=1e-6)
 end
 
 # TODO: Can be cut in half by using points in CR 
-function classify_regions(CRs,hps; reg_ids = nothing, hp_ids = nothing, branches = nothing)
+function classify_regions(CRs,hps, reg2hp; reg_ids = nothing, hp_ids = nothing, branches = nothing)
     isnothing(reg_ids) && (reg_ids = 1:length(CRs))
     isnothing(hp_ids) && (hp_ids = 1:size(hps,2))
     nth, nh = size(hps,1)-1, length(hp_ids)
@@ -83,6 +83,17 @@ function classify_regions(CRs,hps; reg_ids = nothing, hp_ids = nothing, branches
         Ath_test = [Ath0 CRs[i].Ath]
         bth_test = [bth0;CRs[i].bth]
         for (j,hj) in enumerate(hp_ids)
+            # First check if the hp is a facet of the region
+            id = findfirst(x->first(x)==hj,reg2hp[i])
+            if !isnothing(id) # hp is a facet of the region
+                if last(reg2hp[i][id]) == 1
+                    push!(pregs[j],i)
+                else
+                    push!(nregs[j],i)
+                end
+                continue
+            end
+
             # Negative
             Ath_test[:,1] = -hps[1:nth,hj]
             bth_test[1] = -hps[end,hj]-(1e-6+1e-8)
@@ -100,7 +111,7 @@ function build_tree(CRs)
     hps,reg2hp = get_halfplanes(CRs)
     fbs, fb_ids = get_feedbacks(CRs)
     nh = size(hps,2)
-    nregs,pregs = classify_regions(CRs,hps)
+    nregs,pregs = classify_regions(CRs,hps,reg2hp)
     hp_list, jump_list = Int[0],Int[0]
 
     N0 = (Set{Int}(1:length(CRs)),[],1)
@@ -115,7 +126,7 @@ function build_tree(CRs)
         min_val = minimum(vals)
         hp_ids = findall(==(min_val),vals)
         if length(branches) > 0 # Not in root node -> have to compute the actual split
-            splits = tuple.(classify_regions(CRs,hps;reg_ids = reg_ids, hp_ids = hp_ids, branches=branches)...)
+            splits = tuple.(classify_regions(CRs,hps,reg2hp;reg_ids = reg_ids, hp_ids = hp_ids, branches=branches)...)
             vals =[split_objective(s) for s in splits]
             min_val,min_id = findmin(vals)
             hp_id = hp_ids[min_id] # TODO add tie-breaker...
