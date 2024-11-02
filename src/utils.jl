@@ -48,6 +48,7 @@ function normalize_parameters(prob,Θ)
     prob.d[end:end,:] += center'*prob.d[1:end-1,:];
     for i in 1:nth
         prob.d[i,:] *= norm_factors[i];
+        prob.RinvV[i,:] *= norm_factors[i];
     end
 
     Ath = haskey(Θ,:A) ? Θ.A : zeros(nth,0);
