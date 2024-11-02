@@ -10,18 +10,34 @@ function isnonempty(A,b)
     return exitflag == 1
 end
 function get_halfplanes(CRs)
-    isempty(CRs) && return nothing
+    nreg = length(CRs)
+    nreg == 0 && return nothing
     nth = size(CRs[1].Ath,1)
-    Ath,bth = zeros(nth,0),zeros(0)
-    for cr in CRs 
-        Ath = hcat(Ath,cr.Ath)
-        bth = vcat(bth,cr.bth)
+    hps = zeros(nth+1,0)
+    reg2hp = [[] for _ in 1:nreg]
+
+    for (reg_id,cr) in enumerate(CRs)
+        for (i,a) = enumerate(eachcol(cr.Ath))
+            # Disregard box bounds
+            cr.bth[i] == 1 && sum(==(0),a) == 1 && continue
+            asign = sign(a[findfirst(!=(0),a)])
+            hcand = asign*[a;cr.bth[i]]
+            # Check if hcand already exists in hps
+            new_hp = true
+            for (j,h) in  enumerate(eachcol(hps))
+                if(all(hcand.≈h))
+                    push!(reg2hp[reg_id],(j,asign))
+                    new_hp = false
+                    break;
+                end
+            end
+            if new_hp
+                hps = [hps hcand]
+                push!(reg2hp[reg_id],(size(hps,2),asign))
+            end
+        end
     end
-    hps = vcat(Ath, bth')
-    for c in eachcol(hps)
-        c[:].*=sign(c[findfirst(c.!=0)])
-    end
-    return unique(hps,dims=2)
+    return hps,reg2hp
 end
 
 function get_feedbacks(CRs; tol=1e-6)
@@ -81,7 +97,7 @@ function classify_regions(CRs,hps; reg_ids = nothing, hp_ids = nothing, branches
 end
 
 function build_tree(CRs)
-    hps = get_halfplanes(CRs)
+    hps,reg2hp = get_halfplanes(CRs)
     fbs, fb_ids = get_feedbacks(CRs)
     nh = size(hps,2)
     nregs,pregs = classify_regions(CRs,hps)
