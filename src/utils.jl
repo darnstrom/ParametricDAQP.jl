@@ -148,6 +148,12 @@ function extract_CR(ws,prob,λTH,λC)
     if(ws.opts.postcheck_rank && rank(view(prob.MM,ws.AS,ws.AS))<ws.nAS)
         return nothing,true
     end
+    if(ws.opts.store_points)
+        dws = unsafe_load(Ptr{DAQP.Workspace}(ws.DAQP_workspace))
+        θ = copy(unsafe_wrap(Vector{Float64}, dws.u, dws.n, own=false))
+    else
+        θ = zeros(0)
+    end
     if(ws.opts.lowdim_tol > 0)
         ws.sense[1:ws.m].=0
         ccall((:reset_daqp_workspace,DAQP.libdaqp),Cvoid,(Ptr{Cvoid},),ws.DAQP_workspace);
@@ -155,16 +161,10 @@ function extract_CR(ws,prob,λTH,λC)
         if !isfeasible(ws.DAQP_workspace, ws.m, 0) # Check if region is narrow and, hence, should be removed
             return nothing,true
         end
+        ws.bth[1:ws.m].+=ws.opts.lowdim_tol; # Restore 
     end
 
     AS = ws.opts.store_AS ? findall(ws.AS) : Int64[]
-
-    if(ws.opts.store_points)
-        dws = unsafe_load(Ptr{DAQP.Workspace}(ws.DAQP_workspace))
-        θ = copy(unsafe_wrap(Vector{Float64}, dws.u, dws.n, own=false))
-    else
-        θ = zeros(0)
-    end
     # Extract regions/solution
     if(ws.opts.store_regions)
         if(ws.opts.remove_redundant)

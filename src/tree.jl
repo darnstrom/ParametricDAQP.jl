@@ -6,7 +6,11 @@ struct BinarySearchTree
 end
 
 function isnonempty(A,b)
-    th,_,exitflag,_ = DAQP.quadprog(zeros(0,0),zeros(0),A,b,A_rowmaj = true)
+    d = DAQP.Model();
+    DAQP.settings(d,Dict(:fval_bound=>size(A,1)-1)) # Cannot be outside box
+    DAQP.setup(d,zeros(0,0),zeros(0),A,b,A_rowmaj=true);
+    x,fval,exitflag,info = DAQP.solve(d);
+    # TODO add guard to do this check
     return exitflag == 1
 end
 function get_halfplanes(CRs)
@@ -25,7 +29,7 @@ function get_halfplanes(CRs)
             # Check if hcand already exists in hps
             new_hp = true
             for (j,h) in  enumerate(eachcol(hps))
-                if(all(hcand.≈h))
+                if(all(isapprox.(hcand,h,atol=1e-6)))
                     push!(reg2hp[reg_id],(j,asign))
                     new_hp = false
                     break;

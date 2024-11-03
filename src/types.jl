@@ -23,7 +23,7 @@ Base.@kwdef mutable struct Settings
     eps_zero::Float64 = 1e-12
     verbose::Int64 = 1 
     store_AS::Bool = true
-    store_points::Bool = false
+    store_points::Bool = true
     store_regions::Bool = true
     store_dual::Bool = false
     remove_redundant::Bool = true
