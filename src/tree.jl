@@ -85,7 +85,7 @@ function classify_regions(CRs,hps, reg2hp; reg_ids = nothing, hp_ids = nothing, 
 
     for i in reg_ids 
         Ath_test = [Ath0 CRs[i].Ath]
-        bth_test = [bth0;CRs[i].bth]
+        bth_test = [bth0;CRs[i].bth].-1e-6
         for (j,hj) in enumerate(hp_ids)
             # First check if the hp is a facet of the region
             id = findfirst(x->first(x)==hj,reg2hp[i])
@@ -97,14 +97,13 @@ function classify_regions(CRs,hps, reg2hp; reg_ids = nothing, hp_ids = nothing, 
                 end
                 continue
             end
-
             # Negative
             Ath_test[:,1] = -hps[1:nth,hj]
-            bth_test[1] = -hps[end,hj]-(1e-6+1e-8)
+            bth_test[1] = -hps[end,hj]-1e-12
             isnonempty(Ath_test,bth_test) && push!(nregs[j],i)
             # Positive
             Ath_test[:,1] = hps[1:nth,hj]
-            bth_test[1] = hps[end,hj]-(1e-6+1e-8)
+            bth_test[1] = hps[end,hj]-1e-12
             isnonempty(Ath_test,bth_test) && push!(pregs[j],i)
         end
     end
@@ -124,12 +123,17 @@ function build_tree(CRs)
     split_objective = x-> max(length.(x)...) 
     while !isempty(U)
         reg_ids, branches, self_id = pop!(U) 
+
+        hp_ids = reduce(∪,Set(first.(reg2hp[i])) for i in reg_ids);
+        hp_ids = collect(setdiff!(hp_ids,first(b) for b in branches))
+
         # First use heuristic to find candidates 
-        splits = [(reg_ids ∩ nregs[i], reg_ids ∩ pregs[i]) for i in 1:nh]
+        splits = [(reg_ids ∩ nregs[i], reg_ids ∩ pregs[i]) for i in hp_ids]
         vals = [split_objective(s) for s in splits]
         min_val = minimum(vals)
-        hp_ids = findall(==(min_val),vals)
-        if length(branches) > 0 # Not in root node -> have to compute the actual split
+        min_ids = findall(==(min_val),vals)
+        hp_ids = hp_ids[min_ids]
+        if length(branches) > 0 && min_val > 1# Compute the actual split
             splits = tuple.(classify_regions(CRs,hps,reg2hp;reg_ids = reg_ids, hp_ids = hp_ids, branches=branches)...)
             vals =[split_objective(s) for s in splits]
             min_val,min_id = findmin(vals)
@@ -137,7 +141,7 @@ function build_tree(CRs)
             new_nregs,new_pregs = splits[min_id]
         else
             hp_id = hp_ids[1] 
-            new_nregs, new_pregs = splits[hp_id]
+            new_nregs, new_pregs = splits[min_ids[1]]
         end
 
         next_id = length(hp_list)+1
@@ -150,19 +154,20 @@ function build_tree(CRs)
 
         # Spawn new nodes
         fb_cands = get_fbid(new_nregs) 
-        if length(fb_cands)!=1 
+
+        if length(fb_cands) > 1
             push!(U,(new_nregs,branches ∪ [(hp_id,-1)], next_id))
         else
             jump_list[next_id] = 1 # pointing at root node -> leaf
             hp_list[next_id] = first(fb_cands) 
         end
 
-        fb_cands = get_fbid(new_pregs) 
-        if length(fb_cands)!=1 
+        fb_cands = get_fbid(new_pregs)
+        if length(fb_cands) > 1
             push!(U,(new_pregs,branches ∪ [(hp_id,1)], next_id+1))
         else
             jump_list[next_id+1] = 1 # pointing at root node -> leaf
-            hp_list[next_id+1] = first(fb_cands) 
+            hp_list[next_id+1] = first(fb_cands)
         end
     end
     return BinarySearchTree(hps,fbs,hp_list,jump_list)
