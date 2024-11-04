@@ -31,11 +31,11 @@ function MPLDP(mpQP;normalize=true)
         end
     end
 
-    bnd_tbl = haskey(mpQP,:bounds_table) ? mpQP.bounds_table : collect(1:m)
+    bnd_tbl = (haskey(mpQP,:bounds_table) && !isnothing(mpQP.bounds_table)) ? mpQP.bounds_table : collect(1:m)
 
     MRt = M/R.L
     RinvV = -(R.U\V)'
-    if haskey(mpQP,:out_inds)
+    if haskey(mpQP,:out_inds) && !isnothing(mpQP.out_inds)
         MRt = MRt[:,mpQP.out_inds]
         RinvV = RinvV[:,mpQP.out_inds]
     end
