@@ -166,7 +166,7 @@ end
     errs = zeros(N)
     for n = 1:N
         θ = ths[:,n]
-        xbst = ParametricDAQP.evaluate(bst,θ./ub)
+        xbst = ParametricDAQP.evaluate(bst,θ)
         f = mpQP.f[:,1]+mpQP.F*θ
         b = mpQP.b[:,1]+mpQP.B*θ
         xref,~,~,info= DAQP.quadprog(mpQP.H,f,mpQP.A,b);

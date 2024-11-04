@@ -185,6 +185,9 @@ function build_tree(sol::Solution)
             hp_list[next_id+1] = first(fb_cands)
         end
     end
+    # Denormalize 
+    hps = denormalize(hps,sol.scaling,sol.translation;hps=true)
+    fbs = [denormalize(f,sol.scaling,sol.translation) for f in fbs]
     return BinarySearchTree(hps,fbs,hp_list,jump_list)
 end
 

@@ -75,10 +75,11 @@ function denormalize(A,b,scaling,translation)
 end
 function denormalize(F::AbstractMatrix,scaling,translation;hps=false)
     Fn = Diagonal([scaling;1])*F 
-    if hps:
-        Fn[end,:] -= (translation'*Fn[1:end-1,:])[:]
-    else
+    if hps
         Fn[end,:] += (translation'*Fn[1:end-1,:])[:]
+    else
+        Fn[end,:] -= (translation'*Fn[1:end-1,:])[:]
+    end
     return Fn
 end
 function denormalize(cr::CriticalRegion,scaling,translation)
@@ -91,8 +92,6 @@ function denormalize(cr::CriticalRegion,scaling,translation)
     xn = !isempty(cr.x) ? denormalize(cr.x,scaling,translation) : zeros(0,0)
     lamn = !isempty(cr.lam) ? denormalize(cr.lam,scaling,translation) : zeros(0,0)
     thn = !isempty(cr.th) ? denormalize(cr.th,scaling,translation) : zeros(0)
-    println(An)
-    println(bn)
     return CriticalRegion(cr.AS,An,bn,xn,lamn,thn)
 end
 
