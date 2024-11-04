@@ -97,6 +97,7 @@ function classify_regions(CRs,hps, reg2hp; reg_ids = nothing, hp_ids = nothing, 
                 end
                 continue
             end
+
             # Negative
             Ath_test[:,1] = -hps[1:nth,hj]
             bth_test[1] = -hps[end,hj]-1e-12
@@ -120,7 +121,7 @@ function build_tree(CRs)
     N0 = (Set{Int}(1:length(CRs)),[],1)
     U = [N0]
     get_fbid = s->Set{Int}(fb_ids[collect(s)])
-    split_objective = x-> max(length.(x)...) 
+    split_objective = x-> max(length.(get_fbid.(x))...)
     while !isempty(U)
         reg_ids, branches, self_id = pop!(U) 
 
@@ -155,7 +156,14 @@ function build_tree(CRs)
         # Spawn new nodes
         fb_cands = get_fbid(new_nregs) 
 
-        if length(fb_cands) > 1
+        if length(fb_cands) == 0
+            @warn "Empty region -> Defaulting to leaf node" min_val new_nregs new_pregs reg_ids
+            jump_list[next_id] = 1 # pointing at root node -> leaf
+            reg_cands = setdiff(reg_ids,new_pregs)
+            # Try to pick region "disappeared", otherwise pick first region in parent 
+            reg_id  = isempty(fb_cands) ? first(reg_ids) : first(reg_cands)
+            hp_list[next_id] = fb_ids[reg_id]
+        elseif length(fb_cands) > 1
             push!(U,(new_nregs,branches ∪ [(hp_id,-1)], next_id))
         else
             jump_list[next_id] = 1 # pointing at root node -> leaf
@@ -163,7 +171,14 @@ function build_tree(CRs)
         end
 
         fb_cands = get_fbid(new_pregs)
-        if length(fb_cands) > 1
+        if length(fb_cands) == 0
+            @warn "Empty region -> Defaulting to leaf node" min_val new_nregs new_pregs reg_ids
+            jump_list[next_id+1] = 1 # pointing at root node -> leaf
+            reg_cands = setdiff(reg_ids,new_nregs)
+            # Try to pick region that "disappeared", otherwise pick first region in parent 
+            reg_id  = isempty(fb_cands) ? first(reg_ids) : first(reg_cands)
+            hp_list[next_id+1] = fb_ids[reg_id]
+        elseif length(fb_cands) > 1
             push!(U,(new_pregs,branches ∪ [(hp_id,1)], next_id+1))
         else
             jump_list[next_id+1] = 1 # pointing at root node -> leaf
