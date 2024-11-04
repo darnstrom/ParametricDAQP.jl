@@ -83,7 +83,6 @@ function denormalize(F::AbstractMatrix,scaling,translation;hps=false)
     return Fn
 end
 function denormalize(cr::CriticalRegion,scaling,translation)
-    println(denormalize(cr.Ath,cr.bth,scaling,translation))
     if !isempty(cr.Ath)
         An,bn = denormalize(cr.Ath,cr.bth,scaling,translation)
     else 
