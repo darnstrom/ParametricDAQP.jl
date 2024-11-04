@@ -36,7 +36,7 @@ end
 
 Settings(opts::Nothing) = Settings()
 Settings(opts::Settings) = opts
-function Settings(opts::Dict)
+function Settings(opts::AbstractDict)
     out = Settings()
     for (key,value) in opts
         if hasproperty(out, Symbol(key))
