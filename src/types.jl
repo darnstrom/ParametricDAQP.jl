@@ -2,8 +2,8 @@ mutable struct CriticalRegion
     AS::Vector{Int16}
     Ath::Matrix{Float64}
     bth::Vector{Float64}
-    xTH::Matrix{Float64}
-    xC::Vector{Float64}
+    x::Matrix{Float64}
+    lam::Matrix{Float64}
     th::Vector{Float64}
 end
 
@@ -11,21 +11,21 @@ struct MPLDP
     MM::Matrix{Float64}
     M::Matrix{Float64}
     MRt::Matrix{Float64}
-    vTH::Matrix{Float64}
-    vC::Vector{Float64}
+    RinvV::Matrix{Float64}
     d::Matrix{Float64}
     n_theta::Int64
     n::Int64
     bounds_table::Vector{Int64}
+    norm_factors::Vector{Float64}
 end
 
-Base.@kwdef mutable struct EMPCSettings 
+Base.@kwdef mutable struct Settings 
     eps_zero::Float64 = 1e-12
-    eps_gap::Float64  = 1e-6-1e-12
     verbose::Int64 = 1 
     store_AS::Bool = true
-    store_points::Bool = false
+    store_points::Bool = true
     store_regions::Bool = true
+    store_dual::Bool = false
     remove_redundant::Bool = true
     time_limit::Int64 = 1e5
     chunk_size::Int64 = 1e3 
@@ -34,7 +34,21 @@ Base.@kwdef mutable struct EMPCSettings
     lowdim_tol::Float64 = 0 
 end
 
-mutable struct EMPCWorkspace{T<:Integer}
+Settings(opts::Nothing) = Settings()
+Settings(opts::Settings) = opts
+function Settings(opts::AbstractDict)
+    out = Settings()
+    for (key,value) in opts
+        if hasproperty(out, Symbol(key))
+            setproperty!(out, Symbol(key), value)
+        else
+            @warn "$key is not a valid setting"
+        end
+    end
+    return out
+end
+
+mutable struct Workspace{T<:Integer}
     Ath::Matrix{Float64}
     bth::Vector{Float64}
     bth_lower::Vector{Float64}
@@ -49,9 +63,17 @@ mutable struct EMPCWorkspace{T<:Integer}
     Sup::Vector{T}
     F::Vector{CriticalRegion}
     explored::Set{T}
-    opts::EMPCSettings
+    opts::Settings
     IS::BitVector
     AS::BitVector
     nAS::Int64
     norm_factors:: Vector{Float64}
+end
+
+struct Solution
+    CRs::Vector{CriticalRegion}
+    scaling::Vector{Float64} 
+    translation::Vector{Float64}
+    settings::Settings
+    status::Symbol
 end

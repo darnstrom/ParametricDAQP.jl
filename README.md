@@ -4,8 +4,8 @@
 
 $$
 \begin{align}
-\min_{x} &  ~\frac{1}{2}x^{T}Hx+(f+f_{\theta} \theta)^{T}x \\
-\text{s.t.} & ~A x \leq b + W \theta \\
+\min_{x} &  ~\frac{1}{2}x^{T}Hx+(f+F \theta)^{T}x \\
+\text{s.t.} & ~A x \leq b + B \theta \\
 & ~\theta \in \Theta
 \end{align}
 $$
@@ -21,17 +21,16 @@ using ParametricDAQP
 
 H =  [1.5064 0.4838; 0.4838 1.5258];
 f = zeros(2,1);
-f_theta = [9.6652 5.2115; 7.0732 -7.0879];
+F = [9.6652 5.2115; 7.0732 -7.0879];
 A = [1.0 0; -1 0; 0 1; 0 -1];
 b = 2*ones(4);
-W = zeros(4,2);
-mpQP = (H=H,f=f,f_theta=f_theta,A=A,b=b,W=W);
+B = zeros(4,2);
+mpQP = (H=H,f=f,F=F,A=A,b=b,B=B);
 
 # Setup parameter region of interest
 ub,lb  = 1.5*ones(2), -1.5*ones(2);
 Θ = (ub=ub,lb=lb);
 
 # Solve mpQP over desired region
-opts = ParametricDAQP.EMPCSettings();
-F,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
+sol,info = ParametricDAQP.mpsolve(mpQP,Θ);
 ```

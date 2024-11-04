@@ -1,16 +1,17 @@
 ## mpsolve 
 # Compute the explicit solution to multi-parameteric QP
-function mpsolve(mpQP,Θ;opts=EMPCSettings(), AS0 = nothing) # bounds_table as option
+function mpsolve(mpQP,Θ;opts=nothing, AS0 = nothing) # bounds_table as option
     mpLDP = MPLDP(mpQP)
     mpLDP, Θ, tf = normalize_parameters(mpLDP,Θ)
     if(isnothing(AS0))
-        AS0 = compute_AS0(mpQP,tf.center)
+        AS0 = compute_AS0(mpLDP,Θ)
     end
+    opts = Settings(opts)
     F,info =  mpdaqp_explicit(mpLDP,Θ,AS0;opts)
-    return F, merge(info,(scaling=tf.scaling,translation=tf.center))
+    return Solution(F,tf.scaling,tf.center,opts,info.status), info
 end
 ## Method based on combinatorial adjacency 
-function mpdaqp_explicit(prob,Θ,AS0;opts = EMPCSettings())
+function mpdaqp_explicit(prob,Θ,AS0;opts = Settings())
     time_limit = opts.time_limit*1e9;
     status = :Solved
     t0  = time_ns()
@@ -94,7 +95,7 @@ function isoptimal(as,ws,prob,opts)
     # Reset feasibility workspace
     reset_workspace(ws) 
     # Solve primal+dual feasibility problem 
-    normalize_model(ws;eps_gap=opts.eps_gap,eps_zero=opts.eps_zero) || return nothing,false,false;
+    normalize_model(ws;eps_zero=opts.eps_zero) || return nothing,false,false;
 
     ws.nLPs+=1
     if isfeasible(ws.DAQP_workspace, ws.m, 0)
@@ -104,7 +105,7 @@ function isoptimal(as,ws,prob,opts)
     end
 end
 ## Update optimization model
-function normalize_model(ws;eps_gap=1e-6,eps_zero=1e-12)
+function normalize_model(ws;eps_zero=1e-12)
     norm_factor=0.0;
     # add λ ≥ 0 to feasibility model
     for i in (1+ws.m0: ws.m0+length(ws.AS))
@@ -113,7 +114,6 @@ function normalize_model(ws;eps_gap=1e-6,eps_zero=1e-12)
         if(norm_factor>eps_zero)
             rdiv!(view(ws.Ath,:,i),norm_factor)
             ws.bth[i]/=norm_factor
-            ws.bth[i]-=eps_gap
             ws.sense[i] = 0
         else
             (ws.bth[i]<-eps_zero) && return false # trivially infeasible 

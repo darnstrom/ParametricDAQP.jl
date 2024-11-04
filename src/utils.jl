@@ -1,30 +1,46 @@
 ## Setup MPLDP from MPQP
 function MPLDP(mpQP;normalize=true)
-    n, nth = size(mpQP.f_theta) 
+    if hasproperty(mpQP,:f_theta)
+        f_theta = mpQP.f_theta 
+    elseif hasproperty(mpQP,:F)
+        f_theta = mpQP.F
+    end
+
+    if hasproperty(mpQP,:W)
+        W = mpQP.W
+    elseif hasproperty(mpQP,:B)
+        W = mpQP.B
+    end
+
+    n, nth = size(f_theta) 
     m = length(mpQP.b)
 
     R = cholesky((mpQP.H+mpQP.H')/2)
     M = mpQP.A/R.U
-    V = (R.L)\[mpQP.f_theta mpQP.f]
-    d = Matrix(([mpQP.W mpQP.b] + M*V)')# Col. major...
+    V = (R.L)\[f_theta mpQP.f]
+    d = Matrix(([W mpQP.b] + M*V)')# Col. major...
 
+    norm_factors = ones(m)
     if(normalize)
         norm_factor = 0
         for i in 1:m
             norm_factor = norm(view(M,i,:),2) 
             M[i,:]./=norm_factor
             d[:,i]./=norm_factor
+            norm_factors[i]= norm_factor
         end
     end
 
-    # unconstrained solution given by vTH θ + vC
-    vTH = -(R.U\V[:,1:end-1])'
-    vC  = -(R.U\V[:,end])
+    bnd_tbl = (haskey(mpQP,:bounds_table) && !isnothing(mpQP.bounds_table)) ? mpQP.bounds_table : collect(1:m)
 
-    bnd_tbl = haskey(mpQP,:bounds_table) ? mpQP.bounds_table : collect(1:m)
-    haskey(mpQP,:out_inds) && (MRt = MRt[:,mpQP.out_inds])
+    MRt = M/R.L
+    RinvV = -(R.U\V)'
+    if haskey(mpQP,:out_inds) && !isnothing(mpQP.out_inds)
+        MRt = MRt[:,mpQP.out_inds]
+        RinvV = RinvV[:,mpQP.out_inds]
+    end
 
-    return MPLDP(M*M', M, (M/R.L), vTH, vC, d, nth, n, bnd_tbl)
+    return MPLDP(M*M', M, MRt, RinvV, d, nth, n, bnd_tbl, norm_factors)
 end
 
 ## Normalize parameters to -1 ≤ θ ≤ 1
@@ -38,6 +54,7 @@ function normalize_parameters(prob,Θ)
     prob.d[end:end,:] += center'*prob.d[1:end-1,:];
     for i in 1:nth
         prob.d[i,:] *= norm_factors[i];
+        prob.RinvV[i,:] *= norm_factors[i];
     end
 
     Ath = haskey(Θ,:A) ? Θ.A : zeros(nth,0);
@@ -46,6 +63,37 @@ function normalize_parameters(prob,Θ)
         lb = -ones(nth), ub = ones(nth));
     return prob, Θ,(center=center, scaling = 1 ./ norm_factors)
 end
+
+## Denormalize parameters
+function denormalize(v::AbstractVector,scaling,translation)
+    return Diagonal(1 ./ scaling)*v+translation
+end
+function denormalize(A,b,scaling,translation)
+    An = Diagonal(scaling)*A 
+    bn = b+An'*translation
+    return An,bn 
+end
+function denormalize(F::AbstractMatrix,scaling,translation;hps=false)
+    Fn = Diagonal([scaling;1])*F 
+    if hps
+        Fn[end,:] += (translation'*Fn[1:end-1,:])[:]
+    else
+        Fn[end,:] -= (translation'*Fn[1:end-1,:])[:]
+    end
+    return Fn
+end
+function denormalize(cr::CriticalRegion,scaling,translation)
+    if !isempty(cr.Ath)
+        An,bn = denormalize(cr.Ath,cr.bth,scaling,translation)
+    else 
+        An,bn = zeros(0,0),zeros(0)
+    end
+    xn = !isempty(cr.x) ? denormalize(cr.x,scaling,translation) : zeros(0,0)
+    lamn = !isempty(cr.lam) ? denormalize(cr.lam,scaling,translation) : zeros(0,0)
+    thn = !isempty(cr.th) ? denormalize(cr.th,scaling,translation) : zeros(0)
+    return CriticalRegion(cr.AS,An,bn,xn,lamn,thn)
+end
+
 
 ## Reset workspace
 function reset_workspace(ws) 
@@ -57,7 +105,7 @@ end
 
 ## Setup workspace
 # If ub/lb is not set, assume -1 ≤ θ ≤ 1 
-function setup_workspace(Θ,n_constr;opts=EMPCSettings())::EMPCWorkspace
+function setup_workspace(Θ,n_constr;opts=Settings())::Workspace
     nth,n_general = size(Θ.A);
     m0 = isempty(Θ.ub) ? n_general : 2*nth+n_general;
     m_max = m0+n_constr
@@ -95,7 +143,7 @@ function setup_workspace(Θ,n_constr;opts=EMPCSettings())::EMPCWorkspace
     # Set fval_bound to maximal radius for early termination
     # (the region is contained in a ball with this radius)
     max_radius =  isempty(Θ.ub) ? nth : nth*(maximum(Θ.ub)^2); 
-    ws = EMPCWorkspace{UIntX}(A,b,blower,zeros(Cint,m_max),0,m0,p,falses(0,0),0, 
+    ws = Workspace{UIntX}(A,b,blower,zeros(Cint,m_max),0,m0,p,falses(0,0),0, 
                        UIntX[], UIntX[], UIntX[], CriticalRegion[],Set{UIntX}(),opts,
                        falses(n_constr),falses(n_constr),0, zeros(n_constr));
     DAQP.init_c_workspace_ldp(p,ws.Ath,ws.bth,ws.bth_lower,ws.sense;max_radius)
@@ -131,6 +179,12 @@ function extract_CR(ws,prob,λTH,λC)
     if(ws.opts.postcheck_rank && rank(view(prob.MM,ws.AS,ws.AS))<ws.nAS)
         return nothing,true
     end
+    if(ws.opts.store_points)
+        dws = unsafe_load(Ptr{DAQP.Workspace}(ws.DAQP_workspace))
+        θ = copy(unsafe_wrap(Vector{Float64}, dws.u, dws.n, own=false))
+    else
+        θ = zeros(0)
+    end
     if(ws.opts.lowdim_tol > 0)
         ws.sense[1:ws.m].=0
         ccall((:reset_daqp_workspace,DAQP.libdaqp),Cvoid,(Ptr{Cvoid},),ws.DAQP_workspace);
@@ -138,16 +192,10 @@ function extract_CR(ws,prob,λTH,λC)
         if !isfeasible(ws.DAQP_workspace, ws.m, 0) # Check if region is narrow and, hence, should be removed
             return nothing,true
         end
+        ws.bth[1:ws.m].+=ws.opts.lowdim_tol; # Restore 
     end
 
     AS = ws.opts.store_AS ? findall(ws.AS) : Int64[]
-
-    if(ws.opts.store_points)
-        dws = unsafe_load(Ptr{DAQP.Workspace}(ws.DAQP_workspace))
-        θ = copy(unsafe_wrap(Vector{Float64}, dws.u, dws.n, own=false))
-    else
-        θ = zeros(0)
-    end
     # Extract regions/solution
     if(ws.opts.store_regions)
         if(ws.opts.remove_redundant)
@@ -155,25 +203,36 @@ function extract_CR(ws,prob,λTH,λC)
         else
             Ath,bth = ws.Ath[:,1:ws.m],ws.bth[1:ws.m];
         end
-        # Compute primal solution xTH θ + xC 
-        MRt = ws.norm_factors[1:ws.nAS].*prob.MRt[ws.AS,:]
-        xTH = copy(prob.vTH); mul!(xTH,λTH,MRt,1,1) 
-        λC .+= ws.opts.eps_gap; # Shift back (ok since ws.Ath already copied 
-        xC = copy(prob.vC); mul!(xC,MRt',λC,-1,1)
+        # Renormalize dual variable from half-plane normalization
+        λ = [λTH;-λC']
+        for i in 1:ws.nAS
+            rmul!(view(λ,:,i),ws.norm_factors[i])
+        end
+
+        # Compute primal solution x[1:end-1,:]' θ + x[end,:]
+        x = copy(prob.RinvV); mul!(x,λ,prob.MRt[ws.AS,:],1,1)
+ 
+        # Renormalize dual variable from LDP transform
+        if ws.opts.store_dual & ws.opts.store_AS
+            for (i,ASi) in enumerate(AS)
+                rdiv!(view(λ,:,i),-prob.norm_factors[ASi])
+            end
+        end
     else
         Ath,bth = zeros(prob.n_theta,0), zeros(0)
-        xTH = zeros(0,0); xC = zeros(0)
+        x,λ = zeros(0,0),zeros(0,0);
     end
 
-    return CriticalRegion(AS,Ath,bth,xTH,xC,θ),false
+    return CriticalRegion(AS,Ath,bth,x,λ,θ),false
 end
 ## Compute AS0 
-function compute_AS0(mpQP,θ)
-    f = mpQP.f[:,1]+mpQP.f_theta*θ
-    bu = mpQP.b[:,1]+mpQP.W*θ
-    bl = -1e30*ones(length(mpQP.b))
-    senses= haskey(mpQP,:senses) ? mpQP.senses : zeros(Cint,length(mpQP.b));
-
-    _,_,_,info= DAQP.quadprog(mpQP.H,f,mpQP.A ,bu ,bl, senses);
+function compute_AS0(mpLDP,Θ)
+    # Center in box is zero -> dtot = d[end,:]
+    _,_,_,info= DAQP.quadprog(zeros(0,0),zeros(0),mpLDP.M,mpLDP.d[end,:]);
     return findall(abs.(info.λ).> 0)
+    # TODO add backup if this fails
+end
+## Get CRs 
+function get_critical_regions(sol::Solution)
+    return [denormalize(cr,sol.scaling,sol.translation) for cr in sol.CRs]
 end
