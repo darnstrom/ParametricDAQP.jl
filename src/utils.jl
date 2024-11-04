@@ -64,6 +64,39 @@ function normalize_parameters(prob,Θ)
     return prob, Θ,(center=center, scaling = 1 ./ norm_factors)
 end
 
+## Denormalize parameters
+function denormalize(v::AbstractVector,scaling,translation)
+    return Diagonal(1 ./ scaling)*v+translation
+end
+function denormalize(A,b,scaling,translation)
+    An = Diagonal(scaling)*A 
+    bn = b+An'*translation
+    return An,bn 
+end
+function denormalize(F::AbstractMatrix,scaling,translation;hps=false)
+    Fn = Diagonal([scaling;1])*F 
+    if hps:
+        Fn[end,:] -= (translation'*Fn[1:end-1,:])[:]
+    else
+        Fn[end,:] += (translation'*Fn[1:end-1,:])[:]
+    return Fn
+end
+function denormalize(cr::CriticalRegion,scaling,translation)
+    println(denormalize(cr.Ath,cr.bth,scaling,translation))
+    if !isempty(cr.Ath)
+        An,bn = denormalize(cr.Ath,cr.bth,scaling,translation)
+    else 
+        An,bn = zeros(0,0),zeros(0)
+    end
+    xn = !isempty(cr.x) ? denormalize(cr.x,scaling,translation) : zeros(0,0)
+    lamn = !isempty(cr.lam) ? denormalize(cr.lam,scaling,translation) : zeros(0,0)
+    thn = !isempty(cr.th) ? denormalize(cr.th,scaling,translation) : zeros(0)
+    println(An)
+    println(bn)
+    return CriticalRegion(cr.AS,An,bn,xn,lamn,thn)
+end
+
+
 ## Reset workspace
 function reset_workspace(ws) 
     ws.sense[1:ws.m].=0
