@@ -7,8 +7,8 @@ function write_array(f,A,name,type)
     write(f,"};\n")
 end
 
-function codegen(CRs::Vector{CriticalRegion};dir="codegen",fname="pdaqp", float_type="float", int_type="unsigned short")
-    bst = build_tree(CRs);
+function codegen(sol::Solution;dir="codegen",fname="pdaqp", float_type="float", int_type="unsigned short")
+    bst = build_tree(sol);
     codegen(bst;dir,fname,float_type,int_type)
 end
 
