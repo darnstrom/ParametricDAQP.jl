@@ -7,11 +7,16 @@ function write_array(f,A,name,type)
     write(f,"};\n")
 end
 
+function codegen(CRs::Vector{CriticalRegion};dir="codegen",fname="pdaqp", float_type="float", int_type="unsigned short")
+    bst = build_tree(CRs);
+    codegen(bst;dir,fname,float_type,int_type)
+end
+
 function codegen(bst::BinarySearchTree; dir="codegen",fname="pdaqp", float_type="float", int_type="unsigned short")
     isdir(dir) || mkdir(dir)
     # Get number of outputs 
     nth,n_out = size(bst.feedbacks[1]).-(1,0)
-    # Concatanate feedbacks into one array
+    # Concatenate feedbacks into one array
     feedbacks = reduce(hcat,bst.feedbacks)
 
     # Write header file

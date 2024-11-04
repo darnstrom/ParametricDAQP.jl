@@ -160,7 +160,7 @@ function build_tree(CRs)
             @warn "Empty region -> Defaulting to leaf node" min_val new_nregs new_pregs reg_ids
             jump_list[next_id] = 1 # pointing at root node -> leaf
             reg_cands = setdiff(reg_ids,new_pregs)
-            # Try to pick region "disappeared", otherwise pick first region in parent 
+            # Try to pick region that "disappeared", otherwise pick first region in parent
             reg_id  = isempty(fb_cands) ? first(reg_ids) : first(reg_cands)
             hp_list[next_id] = fb_ids[reg_id]
         elseif length(fb_cands) > 1
@@ -175,7 +175,7 @@ function build_tree(CRs)
             @warn "Empty region -> Defaulting to leaf node" min_val new_nregs new_pregs reg_ids
             jump_list[next_id+1] = 1 # pointing at root node -> leaf
             reg_cands = setdiff(reg_ids,new_nregs)
-            # Try to pick region that "disappeared", otherwise pick first region in parent 
+            # Try to pick region that "disappeared", otherwise pick first region in parent
             reg_id  = isempty(fb_cands) ? first(reg_ids) : first(reg_cands)
             hp_list[next_id+1] = fb_ids[reg_id]
         elseif length(fb_cands) > 1
