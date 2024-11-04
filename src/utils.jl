@@ -233,3 +233,7 @@ function compute_AS0(mpLDP,Θ)
     return findall(abs.(info.λ).> 0)
     # TODO add backup if this fails
 end
+## Get CRs 
+function get_critical_regions(sol::Solution)
+    return [denormalize(cr,sol.scaling,sol.translation) for cr in sol.CRs]
+end
