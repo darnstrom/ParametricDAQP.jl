@@ -27,7 +27,7 @@ end
             nv = length(vs)
             nv < 2 && continue
             x,y = first.(vs), last.(vs)
-            c = r.x[ids,uid]'*values + r.x[end,:]
+            c = r.x[ids,uid]'*values + r.x[end,uid]
             z = [r.x[free_ids,uid]'*v + c for v in vs]
             @series begin
                 st --> :mesh3d 
@@ -56,8 +56,8 @@ function pplot(rs::Vector{CriticalRegion};uid=0, fix_ids = nothing, fix_vals=not
         isempty(p) && continue
         push!(ps,p)
         uid == 0 && continue
-        c = r.x[ids,uid]'*values + r.x[end,:]
-        push!(fs,v->c+r.x[free_ids,uid]'*v)
+        c = r.x[ids,uid]'*values + r.x[end,uid]
+        push!(fs,v->c+r.x[free_ids,uid]'*v[1:2])
     end
     PolyDAQP.pplot(ps;fs,opts)
 end
