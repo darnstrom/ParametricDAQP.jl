@@ -45,7 +45,7 @@ end
 
 
     mpQP,Θ = generate_mpQP(n,m,nth)
-    F,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
+    sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
 
     # Test for 10000 random points 
     N = 10000
@@ -54,16 +54,16 @@ end
     errs_primal,errs_dual = zeros(N),zeros(N)
     for n = 1:N
         θ = ths[:,n]
-        inds = pointlocation(θ,F);
+        inds = pointlocation(θ,sol.CRs);
         containment_inds[n]=length(inds)
-        AS = F[inds[1]].AS
-        xsol = F[inds[1]].x'*[θ;1]
-        λsol = F[inds[1]].lam'*[θ;1]
+        AS = sol.CRs[inds[1]].AS
+        xsol = sol.CRs[inds[1]].x'*[θ;1]
+        λsol = sol.CRs[inds[1]].lam'*[θ;1]
         f = mpQP.f[:,1]+mpQP.F*θ
         b = mpQP.b[:,1]+mpQP.B*θ
         xref,~,~,info= DAQP.quadprog(mpQP.H,f,mpQP.A,b,-1e30*ones(2m),mpQP.senses);
         errs_primal[n] = norm(xsol-xref) 
-        errs_dual[n] = norm(λsol-info.λ[F[inds[1]].AS]) 
+        errs_dual[n] = norm(λsol-info.λ[sol.CRs[inds[1]].AS]) 
     end
     @test all(errs_primal.< tol)
     @test all(errs_dual.< tol)
@@ -90,7 +90,7 @@ end
     opts = ParametricDAQP.Settings()
     opts.verbose=1;
     opts.postcheck_rank=true
-    F,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
+    sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
 end
 
 # Non facet to facet
@@ -113,8 +113,8 @@ end
     Θ = (ub=1.5*ones(nth),lb=-1.5*ones(nth)) 
 
     opts = Dict("store_points"=>true, "verbose"=>1)
-    F,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
-    @test length(F) == 27
+    sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
+    @test length(sol.CRs) == 27
 end
 
 
@@ -138,7 +138,7 @@ end
     opts = ParametricDAQP.Settings()
     opts.verbose=1;
     opts.store_points=true
-    F,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
+    sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
 end
 
 @testset "Basic SISO Example from Bemporad et al. 2002" begin
@@ -157,8 +157,8 @@ end
 
     # Solve mpQP over desired region
     opts = ParametricDAQP.Settings()
-    F,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
-    bst = ParametricDAQP.build_tree(F)
+    sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
+    bst = ParametricDAQP.build_tree(sol)
 
     # Compare bst with QP solution
     N = 1000

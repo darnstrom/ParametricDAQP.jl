@@ -8,7 +8,7 @@ function mpsolve(mpQP,Θ;opts=nothing, AS0 = nothing) # bounds_table as option
     end
     opts = Settings(opts)
     F,info =  mpdaqp_explicit(mpLDP,Θ,AS0;opts)
-    return F, merge(info,(scaling=tf.scaling,translation=tf.center))
+    return Solution(F,tf.scaling,tf.center,opts,info.status), info
 end
 ## Method based on combinatorial adjacency 
 function mpdaqp_explicit(prob,Θ,AS0;opts = Settings())

@@ -111,14 +111,14 @@ function classify_regions(CRs,hps, reg2hp; reg_ids = nothing, hp_ids = nothing, 
     return nregs,pregs
 end
 
-function build_tree(CRs)
-    hps,reg2hp = get_halfplanes(CRs)
-    fbs, fb_ids = get_feedbacks(CRs)
+function build_tree(sol::Solution)
+    hps,reg2hp = get_halfplanes(sol.CRs)
+    fbs, fb_ids = get_feedbacks(sol.CRs)
     nh = size(hps,2)
-    nregs,pregs = classify_regions(CRs,hps,reg2hp)
+    nregs,pregs = classify_regions(sol.CRs,hps,reg2hp)
     hp_list, jump_list = Int[0],Int[0]
 
-    N0 = (Set{Int}(1:length(CRs)),[],1)
+    N0 = (Set{Int}(1:length(sol.CRs)),[],1)
     U = [N0]
     get_fbid = s->Set{Int}(fb_ids[collect(s)])
     split_objective = x-> max(length.(get_fbid.(x))...)
@@ -135,7 +135,7 @@ function build_tree(CRs)
         min_ids = findall(==(min_val),vals)
         hp_ids = hp_ids[min_ids]
         if length(branches) > 0 && min_val > 1# Compute the actual split
-            splits = tuple.(classify_regions(CRs,hps,reg2hp;reg_ids = reg_ids, hp_ids = hp_ids, branches=branches)...)
+            splits = tuple.(classify_regions(sol.CRs,hps,reg2hp;reg_ids = reg_ids, hp_ids = hp_ids, branches=branches)...)
             vals =[split_objective(s) for s in splits]
             min_val,min_id = findmin(vals)
             hp_id = hp_ids[min_id] # TODO add tie-breaker...

@@ -69,3 +69,11 @@ mutable struct Workspace{T<:Integer}
     nAS::Int64
     norm_factors:: Vector{Float64}
 end
+
+struct Solution
+    CRs::Vector{CriticalRegion}
+    scaling::Vector{Float64} 
+    translation::Vector{Float64}
+    settings::Settings
+    status::Symbol
+end
