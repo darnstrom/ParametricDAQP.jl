@@ -88,7 +88,7 @@ function denormalize(cr::CriticalRegion,scaling,translation)
     else 
         An,bn = zeros(0,0),zeros(0)
     end
-    xn = !isempty(cr.x) ? denormalize(cr.x,scaling,translation) : zeros(0,0)
+    xn = !isempty(cr.z) ? denormalize(cr.z,scaling,translation) : zeros(0,0)
     lamn = !isempty(cr.lam) ? denormalize(cr.lam,scaling,translation) : zeros(0,0)
     thn = !isempty(cr.th) ? denormalize(cr.th,scaling,translation) : zeros(0)
     return CriticalRegion(cr.AS,An,bn,xn,lamn,thn)

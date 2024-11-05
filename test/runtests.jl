@@ -57,7 +57,7 @@ end
         inds = pointlocation(θ,sol.CRs);
         containment_inds[n]=length(inds)
         AS = sol.CRs[inds[1]].AS
-        xsol = sol.CRs[inds[1]].x'*[θ;1]
+        xsol = sol.CRs[inds[1]].z'*[θ;1]
         λsol = sol.CRs[inds[1]].lam'*[θ;1]
         f = mpQP.f[:,1]+mpQP.F*θ
         b = mpQP.b[:,1]+mpQP.B*θ

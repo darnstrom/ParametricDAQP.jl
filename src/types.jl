@@ -2,7 +2,7 @@ mutable struct CriticalRegion
     AS::Vector{Int16}
     Ath::Matrix{Float64}
     bth::Vector{Float64}
-    x::Matrix{Float64}
+    z::Matrix{Float64}
     lam::Matrix{Float64}
     th::Vector{Float64}
 end

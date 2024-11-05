@@ -47,22 +47,22 @@ end
 function get_feedbacks(CRs; tol=1e-6)
     isempty(CRs) && return nothing
     nth = size(CRs[1].Ath,1)
-    X,ids = [], []
+    Z,ids = [], []
     for cr in CRs 
         id = 0 
-        for (i,x) in enumerate(X)
-            if norm(cr.x-x) < tol
+        for (i,z) in enumerate(Z)
+            if norm(cr.z-z) < tol
                 id = i
                 push!(ids,id)
                 break
             end
         end
         if id == 0 # No duplicate
-            push!(X,cr.x)
-            push!(ids,length(X))
+            push!(Z,cr.z)
+            push!(ids,length(Z))
         end
     end
-    return X,ids
+    return Z,ids
 end
 
 # TODO: Can be cut in half by using points in CR 
