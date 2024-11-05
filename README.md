@@ -4,15 +4,15 @@
 
 $$
 \begin{align}
-\min_{x} &  ~\frac{1}{2}x^{T}Hx+(f+F \theta)^{T}x \\
-\text{s.t.} & ~A x \leq b + B \theta \\
+\min_{z} &  ~\frac{1}{2}z^{T}Hz+(f+F \theta)^{T}x \\
+\text{s.t.} & ~A z \leq b + B \theta \\
 & ~\theta \in \Theta
 \end{align}
 $$
 
 where $H \succ 0$ and $\Theta \triangleq \lbrace l \leq \theta \leq u : A_{\theta} \theta \leq b_{\theta}\rbrace$.
 
-The solution $x^*(\theta)$ is a piecewise-affine function over a polyhedral partition.
+The solution $z^*(\theta)$ is a piecewise-affine function over a polyhedral partition.
 
 ## Example
 The following code solves the mpQP in Section 7.1 in Bemporad et al. 2002
