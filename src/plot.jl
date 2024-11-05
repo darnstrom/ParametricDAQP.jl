@@ -41,7 +41,13 @@ end
 end
 
 ## PGFPlotsX
-function pplot(rs::Vector{CriticalRegion};uid=0, fix_ids = nothing, fix_vals=nothing,opts=Dict{Symbol,Any}())
+function plot_regions(sol::Solution;fix_ids=nothing,fix_vals=nothing,opts=Dict{Symbol,Any}())
+    pplot(get_critical_regions(sol);out_id=0,fix_ids,fix_vals,opts)
+end
+function plot_solution(sol::Solution;out_id=1,fix_ids=nothing,fix_vals=nothing,opts=Dict{Symbol,Any}())
+    pplot(get_critical_regions(sol);out_id,fix_ids,fix_vals,opts)
+end
+function pplot(rs::Vector{CriticalRegion};out_id=0, fix_ids = nothing, fix_vals=nothing,opts=Dict{Symbol,Any}())
     isempty(rs) && error("Cannot plot empty collection")
     nth = size(rs[1].Ath,1)
     ids = isnothing(fix_ids) ? collect(3:nth) : fix_ids
@@ -55,9 +61,23 @@ function pplot(rs::Vector{CriticalRegion};uid=0, fix_ids = nothing, fix_vals=not
         p = Polyhedron(slice(r.Ath,r.bth,ids;values)...)
         isempty(p) && continue
         push!(ps,p)
-        uid == 0 && continue
-        c = r.x[ids,uid]'*values + r.x[end,uid]
-        push!(fs,v->c+r.x[free_ids,uid]'*v[1:2])
+        out_id == 0 && continue
+        c = r.x[ids,out_id]'*values + r.x[end,out_id]
+        push!(fs,v->c+r.x[free_ids,out_id]'*v[1:2])
     end
+    # Some plotting
+    lopts = Dict(
+                 :xlabel=>"\\large\$\\theta_{"*string(free_ids[1])*"}\$",
+                 :ylabel=>"\\large\$\\theta_{"*string(free_ids[2])*"}\$",
+                )
+    if out_id != 0
+        push!(lopts,:zlabel=>"\\large\$x^*_{"*string(out_id[1])*"}\$")
+
+        lopts = merge(Dict(:view=>(45,45),),lopts)
+    else
+        push!(lopts,:ylabel_style=> "{yshift={-5pt}}")
+    end
+
+    opts = merge(lopts,opts)
     PolyDAQP.pplot(ps;fs,opts)
 end
