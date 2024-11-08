@@ -135,7 +135,7 @@ function build_tree(sol::Solution)
         min_ids = findall(==(min_val),vals)
         hp_ids = hp_ids[min_ids]
         if length(branches) > 0 && min_val > 1# Compute the actual split
-            splits = tuple.(classify_regions(sol.CRs,hps,reg2hp;reg_ids = reg_ids, hp_ids = hp_ids, branches=branches)...)
+            splits = tuple.(classify_regions(sol.CRs,hps,reg2hp;reg_ids,hp_ids,branches)...)
             vals =[split_objective(s) for s in splits]
             min_val,min_id = findmin(vals)
             hp_id = hp_ids[min_id] # TODO add tie-breaker...
