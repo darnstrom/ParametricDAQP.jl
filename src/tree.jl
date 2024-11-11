@@ -3,16 +3,18 @@ struct BinarySearchTree
     feedbacks::Vector{Matrix{Float64}}
     hp_list::Vector{Int}
     jump_list::Vector{Int}
+    depth::Int
 end
 
 function isnonempty(A,b)
     d = DAQP.Model();
-    DAQP.settings(d,Dict(:fval_bound=>size(A,1)-1)) # Cannot be outside box
+    DAQP.settings(d,Dict(:fval_bound=>size(A,1)-1,:zero_tol=>1e-7)) # Cannot be outside box
     DAQP.setup(d,zeros(0,0),zeros(0),A,b,A_rowmaj=true);
     x,fval,exitflag,info = DAQP.solve(d);
     # TODO add guard to do this check
     return exitflag == 1
 end
+
 function get_halfplanes(CRs)
     nreg = length(CRs)
     nreg == 0 && return nothing
@@ -122,8 +124,11 @@ function build_tree(sol::Solution)
     U = [N0]
     get_fbid = s->Set{Int}(fb_ids[collect(s)])
     split_objective = x-> max(length.(get_fbid.(x))...)
+
+    depth = 0
     while !isempty(U)
         reg_ids, branches, self_id = pop!(U) 
+        depth = max(depth,length(branches))
 
         hp_ids = reduce(∪,Set(first.(reg2hp[i])) for i in reg_ids);
         hp_ids = collect(setdiff!(hp_ids,first(b) for b in branches))
@@ -188,7 +193,7 @@ function build_tree(sol::Solution)
     # Denormalize 
     hps = denormalize(hps,sol.scaling,sol.translation;hps=true)
     fbs = [denormalize(f,sol.scaling,sol.translation) for f in fbs]
-    return BinarySearchTree(hps,fbs,hp_list,jump_list)
+    return BinarySearchTree(hps,fbs,hp_list,jump_list,depth)
 end
 
 function evaluate(bst::BinarySearchTree,θ)
