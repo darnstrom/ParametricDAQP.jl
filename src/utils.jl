@@ -228,9 +228,19 @@ end
 ## Compute AS0 
 function compute_AS0(mpLDP,Θ)
     # Center in box is zero -> dtot = d[end,:]
-    _,_,_,info= DAQP.quadprog(zeros(0,0),zeros(0),mpLDP.M,mpLDP.d[end,:]);
+    _,_,exitflag,info= DAQP.quadprog(zeros(0,0),zeros(0),mpLDP.M,mpLDP.d[end,:]);
+    if exitflag == 1
+        return findall(abs.(info.λ).> 0)
+    end
+    # Solve lifted feasibility problem in (x,θ)-space to find initial point 
+    x,_,exitflag,info= DAQP.quadprog(zeros(0,0),zeros(0),[-mpLDP.d[1:end-1,:]' mpLDP.M],mpLDP.d[end,:]);
+    if exitflag != 1
+        @warn "There is no parameter that makes the problem feasible"
+        return nothing
+    end
+    θ = x[1:mpLDP.n_theta]
+    _,_,exitflag,info= DAQP.quadprog(zeros(0,0),zeros(0),mpLDP.M,mpLDP.d'*[θ;1]);
     return findall(abs.(info.λ).> 0)
-    # TODO add backup if this fails
 end
 ## Get CRs 
 function get_critical_regions(sol::Solution)
