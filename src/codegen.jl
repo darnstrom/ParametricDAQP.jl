@@ -71,4 +71,31 @@ void $(fname)_evaluate(c_float* parameter, c_float* solution){
 }
           """)
     close(fsrc)
+
+    # Write simple example
+    fex = open(joinpath(dir,"example.c"), "w")
+    write(fex, """
+#include "$(fname).h"
+#include <stdio.h>
+
+int main(){
+    c_float solution[$nz];
+    c_float parameter[$nth];
+    int i;
+    // Initialize parameter
+    for(i=0; i< $nth; i++)
+        parameter[i] = 0;
+
+    // Get the solution at the parameter 
+    $(fname)_evaluate(parameter,solution);
+
+    printf("For the parameter\\n");
+    for(i=0; i< $nth; i++)
+        printf("%f\\n",parameter[i]);
+    printf("the solution is\\n");
+    for(i=0; i< $nz; i++)
+        printf("%f\\n",solution[i]);
+}
+          """)
+    close(fex)
 end
