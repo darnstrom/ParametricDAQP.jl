@@ -15,7 +15,7 @@ end
 function codegen(bst::BinarySearchTree; dir="codegen",fname="pdaqp", float_type="float", int_type="unsigned short")
     isdir(dir) || mkdir(dir)
     # Get number of outputs 
-    nth,n_out = size(bst.feedbacks[1]).-(1,0)
+    nth,nz = size(bst.feedbacks[1]).-(1,0)
     # Concatenate feedbacks into one array
     feedbacks = reduce(hcat,bst.feedbacks)
 
@@ -27,9 +27,9 @@ function codegen(bst::BinarySearchTree; dir="codegen",fname="pdaqp", float_type=
 
     write(fh, "typedef $float_type c_float;\n")
     write(fh, "typedef $int_type c_int;\n")
-    write(fh, "#define $(uppercase(fname))_N_PARAM $nth\n")
-    write(fh, "#define $(uppercase(fname))_N_OUT $n_out\n\n")
-    write(fh, "void $(fname)_evaluate(c_float* param, c_float* out);\n")
+    write(fh, "#define $(uppercase(fname))_N_PARAMETER $nth\n")
+    write(fh, "#define $(uppercase(fname))_N_SOLUTION $nz\n\n")
+    write(fh, "void $(fname)_evaluate(c_float* parameter, c_float* solution);\n")
     write(fh, "#endif // ifndef $hguard\n");
     close(fh)
 
@@ -43,7 +43,7 @@ function codegen(bst::BinarySearchTree; dir="codegen",fname="pdaqp", float_type=
     write_array(fsrc,bst.jump_list.-1,fname*"_jump_list","c_int") 
 
     write(fsrc, """
-void $(fname)_evaluate(c_float* param, c_float* out){
+void $(fname)_evaluate(c_float* parameter, c_float* solution){
     int i,j,disp;
     int id,next_id;
     c_float val;
@@ -51,9 +51,9 @@ void $(fname)_evaluate(c_float* param, c_float* out){
     next_id = $(fname)_jump_list[id];
     while(next_id != 0){
         // Compute halfplane value 
-        disp = $(fname)_hp_list[id]*($(uppercase(fname))_N_PARAM+1);
-        for(i=0, val=0; i<$(uppercase(fname))_N_PARAM; i++)
-            val += param[i] * $(fname)_halfplanes[disp++];
+        disp = $(fname)_hp_list[id]*($(uppercase(fname))_N_PARAMETER+1);
+        for(i=0, val=0; i<$(uppercase(fname))_N_PARAMETER; i++)
+            val += parameter[i] * $(fname)_halfplanes[disp++];
         if(val <= $(fname)_halfplanes[disp])// positive branch
             id = next_id+1;
         else // negative branch
@@ -61,14 +61,41 @@ void $(fname)_evaluate(c_float* param, c_float* out){
         next_id = $(fname)_jump_list[id];
     }
     // Leaf node reached -> evaluate affine function
-    disp = $(fname)_hp_list[id]*($(uppercase(fname))_N_PARAM+1)*$(uppercase(fname))_N_OUT;
-    for(i=0; i < $(uppercase(fname))_N_OUT; i++){
-        for(j=0, val=0; j < $(uppercase(fname))_N_PARAM; j++)
-            val += param[j] * $(fname)_feedbacks[disp++];
+    disp = $(fname)_hp_list[id]*($(uppercase(fname))_N_PARAMETER+1)*$(uppercase(fname))_N_SOLUTION;
+    for(i=0; i < $(uppercase(fname))_N_SOLUTION; i++){
+        for(j=0, val=0; j < $(uppercase(fname))_N_PARAMETER; j++)
+            val += parameter[j] * $(fname)_feedbacks[disp++];
         val += $(fname)_feedbacks[disp++];
-        out[i] = val;
+        solution[i] = val;
     }
 }
           """)
     close(fsrc)
+
+    # Write simple example
+    fex = open(joinpath(dir,"example.c"), "w")
+    write(fex, """
+#include "$(fname).h"
+#include <stdio.h>
+
+int main(){
+    c_float solution[$nz];
+    c_float parameter[$nth];
+    int i;
+    // Initialize parameter
+    for(i=0; i< $nth; i++)
+        parameter[i] = 0;
+
+    // Get the solution at the parameter 
+    $(fname)_evaluate(parameter,solution);
+
+    printf("For the parameter\\n");
+    for(i=0; i< $nth; i++)
+        printf("%f\\n",parameter[i]);
+    printf("the solution is\\n");
+    for(i=0; i< $nz; i++)
+        printf("%f\\n",solution[i]);
+}
+          """)
+    close(fex)
 end
