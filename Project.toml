@@ -1,6 +1,6 @@
 name = "ParametricDAQP"
 uuid = "19f72acb-e2a9-45c8-96b9-4d5487c8db2e"
-authors = ["Daniel Arnström <daniel.arnstrom@gmail.com"]
+authors = ["Daniel Arnström <daniel.arnstrom@gmail.com>"]
 version = "0.1.0"
 
 [deps]
@@ -8,6 +8,11 @@ DAQP = "c47d62df-3981-49c8-9651-128b1cd08617"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 PolyDAQP = "be5c70c9-e47a-4559-82a9-cba980583202"
 RecipesBase = "3cdcf5f2-1ef4-517c-9805-6587b60abb01"
+
+[compat]
+julia = "1.6"
+DAQP = "0.5.2"
+PolyDAQP = "0.2.1"
 
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
