@@ -174,3 +174,29 @@ end
     end
     @test all(errs.< 1e-5)
 end
+
+@testset "Zero rows in A" begin
+    n,m,nth = 3,10,4
+    tol = 1e-5
+
+    opts = ParametricDAQP.Settings()
+
+
+    mpQP,Θ = generate_mpQP(n,m,nth)
+    sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
+    Nref = length(sol.CRs)
+
+    # Append some zero rows
+    H = mpQP.H
+    f = mpQP.f
+    F = mpQP.F
+    A = [mpQP.A;zeros(nth,n)] 
+    b = [mpQP.b;ones(nth)]
+    B = [mpQP.B;-I(nth)]
+    bounds_table = [mpQP.bounds_table;2m+1:2m+nth]  
+    senses = [mpQP.senses;zeros(Cint,nth)]  
+    mpQP = (H=H,f=f,F=F,
+                A=A,b=b,B=B,bounds_table=bounds_table,senses=senses)
+    sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
+    @test Nref == length(sol.CRs)
+end

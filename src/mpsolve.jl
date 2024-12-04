@@ -15,7 +15,22 @@ function mpdaqp_explicit(prob,Θ,AS0;opts = Settings())
     time_limit = opts.time_limit*1e9;
     status = :Solved
     t0  = time_ns()
-    nth,m = size(prob.d);
+    m = size(prob.d,2);
+
+    # Handle zero rows
+    id_cands = findall(prob.norm_factors .> opts.eps_zero)
+    if(length(id_cands) < m)
+        id_zeros = findall(prob.norm_factors .≤ opts.eps_zero)
+        opts.verbose >  0 && @warn "Some rows in A are zero → treated as pure parameter constraints" 
+        if hasproperty(Θ,:Ath)
+            A = [Θ.A -prob.d[1:end-1,id_zeros]]
+            b = [Θ.b; prob.d[end,id_zeros]]
+        else
+            A = -prob.d[1:end-1,id_zeros]
+            b = prob.d[end,id_zeros]
+        end
+        Θ = (A= A, b = b,lb = Θ.lb, ub = Θ.ub) 
+    end
 
     # Initialize
     ws=setup_workspace(Θ,m;opts);
@@ -24,7 +39,6 @@ function mpdaqp_explicit(prob,Θ,AS0;opts = Settings())
     push!(ws.explored,as0)
     j = 0
 
-    id_cands = findall(prob.norm_factors .> opts.eps_zero)
 
     # Start exploration 
     while(!isempty(ws.S) || !isempty(ws.Sdown) || !isempty(ws.Sup))
