@@ -1,12 +1,36 @@
 ## mpsolve 
 # Compute the explicit solution to multi-parameteric QP
 function mpsolve(mpQP,Θ;opts=nothing, AS0 = nothing) # bounds_table as option
-    mpLDP = MPLDP(mpQP)
+    opts = Settings(opts)
+    # Hande bounds 
+    Δb = Θ.ub-Θ.lb 
+    if any(Δb .< -opts.eps_zero) 
+        opts.verbose > 0 && @error "Θ is empty"
+        return nothing,nothing
+    end
+
+
+    # Check if some parameters are fixed
+    fix_ids = findall(Δb .< opts.eps_zero) # ub[fix_ids] = lb[fix_ids]
+    fix_vals = Θ.ub[fix_ids]
+    if(!isempty(fix_ids))
+        opts.verbose > 0 && @warn "θ$fix_ids fixed at $fix_vals"
+        free_ids = setdiff(1:length(Θ.ub),fix_ids)
+        if hasproperty(Θ,:A)
+            Θ=(A=Θ.A[free_ids,:], b = Θ.b+Θ.A[fix_ids,:]'*fix_vals, 
+               lb=Θ.lb[free_ids],ub=Θ.ub[free_ids])
+        else
+            Θ=(lb=Θ.lb[free_ids],ub=Θ.ub[free_ids])
+        end
+    end
+
+    # Setup LDP and normalize
+    mpLDP = MPLDP(mpQP;fix_ids,fix_vals)
     mpLDP, Θ, tf = normalize_parameters(mpLDP,Θ)
+
     if(isnothing(AS0))
         AS0 = compute_AS0(mpLDP,Θ)
     end
-    opts = Settings(opts)
     F,info =  mpdaqp_explicit(mpLDP,Θ,AS0;opts)
     return Solution(F,tf.scaling,tf.center,opts,info.status), info
 end
@@ -21,7 +45,7 @@ function mpdaqp_explicit(prob,Θ,AS0;opts = Settings())
     id_cands = findall(prob.norm_factors .> opts.eps_zero)
     if(length(id_cands) < m)
         id_zeros = findall(prob.norm_factors .≤ opts.eps_zero)
-        opts.verbose >  0 && @warn "Some rows in A are zero → treated as pure parameter constraints" 
+        opts.verbose >  0 && @warn "Rows $id_zeros in A are zero → seen as parameter constraints" 
         if hasproperty(Θ,:Ath)
             A = [Θ.A -prob.d[1:end-1,id_zeros]]
             b = [Θ.b; prob.d[end,id_zeros]]

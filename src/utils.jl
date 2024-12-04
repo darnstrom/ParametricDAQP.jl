@@ -1,5 +1,5 @@
 ## Setup MPLDP from MPQP
-function MPLDP(mpQP;normalize=true)
+function MPLDP(mpQP;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
     if hasproperty(mpQP,:f_theta)
         f_theta = mpQP.f_theta 
     elseif hasproperty(mpQP,:F)
@@ -15,10 +15,13 @@ function MPLDP(mpQP;normalize=true)
     n, nth = size(f_theta) 
     m = length(mpQP.b)
 
+    free_ids = setdiff(1:nth,fix_ids)
+
     R = cholesky((mpQP.H+mpQP.H')/2)
     M = mpQP.A/R.U
-    V = (R.L)\[f_theta mpQP.f]
-    d = Matrix(([W mpQP.b] + M*V)')# Col. major...
+    V = (R.L)\[f_theta[:,free_ids] mpQP.f+f_theta[:,fix_ids]*fix_vals]
+    d = Matrix(([W[:,free_ids] mpQP.b+W[:,fix_ids]*fix_vals] + M*V)')# Col. major...
+    nth = length(free_ids) 
 
     norm_factors = ones(m)
     if(normalize)
