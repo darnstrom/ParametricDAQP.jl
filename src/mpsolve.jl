@@ -24,6 +24,8 @@ function mpdaqp_explicit(prob,Θ,AS0;opts = Settings())
     push!(ws.explored,as0)
     j = 0
 
+    id_cands = findall(prob.norm_factors .> opts.eps_zero)
+
     # Start exploration 
     while(!isempty(ws.S) || !isempty(ws.Sdown) || !isempty(ws.Sup))
 
@@ -34,10 +36,10 @@ function mpdaqp_explicit(prob,Θ,AS0;opts = Settings())
         end
 
         while(length(ws.S) < opts.chunk_size && !isempty(ws.Sdown)) # First try to move down...
-            explore_supersets(pop!(ws.Sdown),ws,prob,m,ws.S)
+            explore_supersets(pop!(ws.Sdown),ws,prob,id_cands,ws.S)
         end
         while(length(ws.S) < opts.chunk_size && !isempty(ws.Sup)) # ... then try to move up
-            explore_subsets(pop!(ws.Sup),ws,prob,m,ws.S)
+            explore_subsets(pop!(ws.Sup),ws,prob,id_cands,ws.S)
         end
 
         opts.verbose>0 && print_ws(ws,(j+=1))
@@ -134,9 +136,9 @@ function compute_μ(prob,AS,IS,λTH,λC,μTH,μC)
     μC .=  @view prob.d[end,IS]; mul!(μC,MMAI',λC,1,1)
 end
 ## Explore subsets 
-function explore_subsets(as,ws,prob,m,S)
+function explore_subsets(as,ws,prob,id_cands,S)
     UIntX = typeof(as)
-    for i in 1:m 
+    for i in id_cands
         mask = UIntX(1)<<(i-1)
         as&mask ==  0 && continue
         as_new = as&~mask
@@ -147,9 +149,9 @@ function explore_subsets(as,ws,prob,m,S)
     end
 end
 ## Explore supersets 
-function explore_supersets(as,ws,prob,m,S)
+function explore_supersets(as,ws,prob,id_cands,S)
     UIntX = typeof(as)
-    for i in 1:m 
+    for i in id_cands
         mask = UIntX(1)<<(i-1);
         as&(mask|(1<<(prob.bounds_table[i]-1))) != 0 && continue
         #as&mask != 0 && continue
