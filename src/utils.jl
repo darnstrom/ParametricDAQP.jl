@@ -145,7 +145,7 @@ function setup_workspace(Θ,n_constr;opts=Settings())::Workspace
     p=DAQP.setup_c_workspace(nth);
     # Set fval_bound to maximal radius for early termination
     # (the region is contained in a ball with this radius)
-    max_radius =  isempty(Θ.ub) ? nth : nth*(maximum(Θ.ub)^2); 
+    max_radius =  isempty(Θ.ub) ? nth : nth*(maximum(Θ.ub)^2)/2; 
     ws = Workspace{UIntX}(A,b,blower,zeros(Cint,m_max),0,m0,p,falses(0,0),0, 
                        UIntX[], UIntX[], UIntX[], CriticalRegion[],Set{UIntX}(),opts,
                        falses(n_constr),falses(n_constr),0, zeros(n_constr));
