@@ -85,13 +85,10 @@ function mpdaqp_explicit(prob,Θ,AS0;opts = Settings())
         # Process pending AS
         while(!isempty(ws.S))
             as = pop!(ws.S);
-            region,LICQ_broken,down= isoptimal(as,ws,prob,opts)
-            if(!isnothing(region))
-                push!(ws.F,region)
-                down && push!(ws.Sdown,as)
-                push!(ws.Sup,as)
-            end
-            LICQ_broken && push!(ws.Sup,as)
+            region,up,down= isoptimal(as,ws,prob,opts)
+            !isnothing(region) && push!(ws.F,region)
+            up && push!(ws.Sup,as)
+            down && push!(ws.Sdown,as)
         end
 
     end
@@ -112,12 +109,12 @@ function isoptimal(as,ws,prob,opts)
     if(opts.factorization == :qr)
         R = (ws.nAS > 0) ? UpperTriangular(qr(prob.M[ws.AS,:]').R) : UpperTriangular(zeros(0,0))
         if(any(abs(R[i,i]) <1e-12 for i in 1:ws.nAS))
-            return nothing,true,false # LICQ broken
+            return nothing,true,false # LICQ broken => explore up
         end
     else
         C = cholesky(prob.MM[ws.AS,ws.AS],check=false)
         if(!issuccess(C))
-            return nothing,true,false # LICQ broken
+            return nothing,true,false # LICQ broken = explore up
         end
         R = UpperTriangular(C.factors)
     end
@@ -139,7 +136,7 @@ function isoptimal(as,ws,prob,opts)
 
     ws.nLPs+=1
     if isfeasible(ws.DAQP_workspace, ws.m, 0)
-        return extract_CR(ws,prob,λTH,λC)...,(ws.nAS ≤ prob.n)
+        return extract_CR(ws,prob,λTH,λC),true,ws.nAS ≤ prob.n
     else
         return nothing,false,false
     end

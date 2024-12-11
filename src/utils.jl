@@ -180,7 +180,7 @@ end
 ## Extract Critical region 
 function extract_CR(ws,prob,λTH,λC)
     if(ws.opts.postcheck_rank && rank(view(prob.MM,ws.AS,ws.AS))<ws.nAS)
-        return nothing,true
+        return nothing
     end
     if(ws.opts.store_points)
         dws = unsafe_load(Ptr{DAQP.Workspace}(ws.DAQP_workspace))
@@ -189,13 +189,14 @@ function extract_CR(ws,prob,λTH,λC)
         θ = zeros(0)
     end
     if(ws.opts.lowdim_tol > 0)
+        rhs_offset = ws.opts.lowdim_tol + 1e-6 # + 1e-6 to account for tolerance in DAQP
         ws.sense[1:ws.m].=0
         ccall((:reset_daqp_workspace,DAQP.libdaqp),Cvoid,(Ptr{Cvoid},),ws.DAQP_workspace);
-        ws.bth[1:ws.m].-=ws.opts.lowdim_tol; # Shrink region 
+        ws.bth[1:ws.m].-=rhs_offset; # Shrink region 
         if !isfeasible(ws.DAQP_workspace, ws.m, 0) # Check if region is narrow and, hence, should be removed
-            return nothing,true
+            return nothing
         end
-        ws.bth[1:ws.m].+=ws.opts.lowdim_tol; # Restore 
+        ws.bth[1:ws.m].+=rhs_offset; # Restore 
     end
 
     AS = ws.opts.store_AS ? findall(ws.AS) : Int64[]
@@ -226,7 +227,7 @@ function extract_CR(ws,prob,λTH,λC)
         x,λ = zeros(0,0),zeros(0,0);
     end
 
-    return CriticalRegion(AS,Ath,bth,x,λ,θ),false
+    return CriticalRegion(AS,Ath,bth,x,λ,θ)
 end
 ## Compute AS0 
 function compute_AS0(mpLDP,Θ)
