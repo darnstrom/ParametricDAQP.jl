@@ -31,7 +31,11 @@ function mpsolve(mpQP,Θ;opts=nothing, AS0 = nothing) # bounds_table as option
     if(isnothing(AS0))
         AS0 = compute_AS0(mpLDP,Θ)
     end
-    F,info =  mpdaqp_explicit(mpLDP,Θ,AS0;opts)
+    if(isnothing(AS0))
+        F,info = CriticalRegion[], (solve_time = 0, nCR = 0, nLPs = 0, nExplored = 0,status=:NoFeasibleParameter)
+    else
+        F,info = mpdaqp_explicit(mpLDP,Θ,AS0;opts)
+    end
     return Solution(F,tf.scaling,tf.center,opts,info.status), info
 end
 ## Method based on combinatorial adjacency 
@@ -55,6 +59,8 @@ function mpdaqp_explicit(prob,Θ,AS0;opts = Settings())
         end
         Θ = (A= A, b = b,lb = Θ.lb, ub = Θ.ub) 
     end
+
+    setdiff!(id_cands,prob.eq_ids) # equality constraints cannot be modified
 
     # Initialize
     ws=setup_workspace(Θ,m;opts);

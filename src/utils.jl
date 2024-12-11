@@ -12,6 +12,13 @@ function MPLDP(mpQP;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
         W = mpQP.B
     end
 
+    eq_ids = hasproperty(mpQP,:eq_ids) ? mpQP.eq_ids : Int[]
+    if hasproperty(mpQP,:sense)
+        eq_ids = eq_ids ∪ findall(mpQP.sense.&DAQP.EQUALITY.!=0)
+    elseif hasproperty(mpQP,:senses)
+        eq_ids = eq_ids ∪ findall(mpQP.senses.&DAQP.EQUALITY.!=0)
+    end
+
     n, nth = size(f_theta) 
     m = length(mpQP.b)
 
@@ -43,7 +50,7 @@ function MPLDP(mpQP;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
         RinvV = RinvV[:,mpQP.out_inds]
     end
 
-    return MPLDP(M*M', M, MRt, RinvV, d, nth, n, bnd_tbl, norm_factors)
+    return MPLDP(M*M', M, MRt, RinvV, d, nth, n, bnd_tbl, norm_factors, eq_ids)
 end
 
 ## Normalize parameters to -1 ≤ θ ≤ 1
@@ -232,18 +239,20 @@ end
 ## Compute AS0 
 function compute_AS0(mpLDP,Θ)
     # Center in box is zero -> dtot = d[end,:]
-    _,_,exitflag,info= DAQP.quadprog(zeros(0,0),zeros(0),mpLDP.M,mpLDP.d[end,:]);
+    senses = zeros(Cint,size(mpLDP.d,2));
+    senses[mpLDP.eq_ids] .= DAQP.EQUALITY
+    _,_,exitflag,info= DAQP.quadprog(zeros(0,0),zeros(0),mpLDP.M,mpLDP.d[end,:],Float64[], senses);
     if exitflag == 1
         return findall(abs.(info.λ).> 0)
     end
     # Solve lifted feasibility problem in (x,θ)-space to find initial point 
-    x,_,exitflag,info= DAQP.quadprog(zeros(0,0),zeros(0),[-mpLDP.d[1:end-1,:]' mpLDP.M],mpLDP.d[end,:]);
+    x,_,exitflag,info= DAQP.quadprog(zeros(0,0),zeros(0),[-mpLDP.d[1:end-1,:]' mpLDP.M],mpLDP.d[end,:],Float64[],senses);
     if exitflag != 1
         @warn "There is no parameter that makes the problem feasible"
         return nothing
     end
     θ = x[1:mpLDP.n_theta]
-    _,_,exitflag,info= DAQP.quadprog(zeros(0,0),zeros(0),mpLDP.M,mpLDP.d'*[θ;1]);
+    _,_,exitflag,info= DAQP.quadprog(zeros(0,0),zeros(0),mpLDP.M,mpLDP.d'*[θ;1],Float64[],senses);
     return findall(abs.(info.λ).> 0)
 end
 ## Get CRs 
