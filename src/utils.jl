@@ -12,7 +12,7 @@ function MPLDP(mpQP;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
         W = mpQP.B
     end
 
-    eq_ids = hasproperty(mpQP,:eq_ids) ? mpQP.eq_ids : Int[]
+    eq_ids = hasproperty(mpQP,:eq_ids) && !isnothing(mpQP.eq_ids) ? mpQP.eq_ids : Int[]
     if hasproperty(mpQP,:sense)
         eq_ids = eq_ids ∪ findall(mpQP.sense.&DAQP.EQUALITY.!=0)
     elseif hasproperty(mpQP,:senses)
