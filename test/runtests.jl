@@ -37,7 +37,7 @@ end
 
 @testset "ParametricDAQP.jl" begin
     n,m,nth = 5,20,6
-    tol = 1e-5
+    rel_tol = 1e-5
 
     opts = ParametricDAQP.Settings()
     opts.store_points=true
@@ -62,11 +62,11 @@ end
         f = mpQP.f[:,1]+mpQP.F*θ
         b = mpQP.b[:,1]+mpQP.B*θ
         xref,~,~,info= DAQP.quadprog(mpQP.H,f,mpQP.A,b,-1e30*ones(2m),mpQP.senses);
-        errs_primal[n] = norm(xsol-xref) 
-        errs_dual[n] = norm(λsol-info.λ[sol.CRs[inds[1]].AS]) 
+        errs_primal[n] = norm(xsol-xref)/norm(xsol) 
+        errs_dual[n] = norm(λsol-info.λ[sol.CRs[inds[1]].AS])/norm(λsol)
     end
-    @test all(errs_primal.< tol)
-    @test all(errs_dual.< tol)
+    @test maximum(errs_primal) < rel_tol
+    @test maximum(errs_dual) < rel_tol
     @test ~any(containment_inds.==0) # No holes
     @test sum(containment_inds.>1) < 0.01*N # Not more than 1% overlap
 end
@@ -115,6 +115,10 @@ end
     opts = Dict("store_points"=>true, "verbose"=>1)
     sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
     @test length(sol.CRs) == 27
+    # Remove lower dimensional regions
+    opts = Dict("store_points"=>true, "verbose"=>1, "lowdim_tol"=>1e-12)
+    sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
+    @test length(sol.CRs) == 12
 end
 
 
@@ -173,4 +177,57 @@ end
         errs[n] = norm(xref-xbst)
     end
     @test all(errs.< 1e-5)
+end
+
+@testset "Zero rows in A" begin
+    n,m,nth = 3,10,4
+    tol = 1e-5
+
+    opts = ParametricDAQP.Settings()
+
+
+    mpQP,Θ = generate_mpQP(n,m,nth)
+    sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
+    Nref = length(sol.CRs)
+
+    # Append some zero rows
+    H = mpQP.H
+    f = mpQP.f
+    F = mpQP.F
+    A = [mpQP.A;zeros(nth,n)] 
+    b = [mpQP.b;ones(nth)]
+    B = [mpQP.B;-I(nth)]
+    bounds_table = [mpQP.bounds_table;2m+1:2m+nth]  
+    senses = [mpQP.senses;zeros(Cint,nth)]  
+    mpQP = (H=H,f=f,F=F,
+                A=A,b=b,B=B,bounds_table=bounds_table,senses=senses)
+    sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
+    @test Nref == length(sol.CRs)
+end
+
+@testset "Fixed parameters" begin
+    n,m,nth = 3,10,4
+    tol = 1e-5
+
+    opts = ParametricDAQP.Settings()
+
+
+    mpQP,Θ = generate_mpQP(n,m,nth)
+    Θfix = (lb=[0;0;Θ.lb[3:4]],ub=[0;0;Θ.ub[3:4]])
+    sol,info = ParametricDAQP.mpsolve(mpQP,Θfix;opts);
+    Nref = length(sol.CRs)
+
+    # Append some zero rows
+    H = mpQP.H
+    f = mpQP.f
+    F = mpQP.F[:,3:4]
+    A = mpQP.A
+    b = mpQP.b
+    B = mpQP.B[:,3:4]
+    bounds_table = mpQP.bounds_table  
+    senses = mpQP.senses
+    mpQP = (H=H,f=f,F=F,
+                A=A,b=b,B=B,bounds_table=bounds_table,senses=senses)
+    sol,info = ParametricDAQP.mpsolve(mpQP,(lb=Θ.lb[3:4], ub = Θ.ub[3:4]);opts);
+    @test Nref == length(sol.CRs)
 end

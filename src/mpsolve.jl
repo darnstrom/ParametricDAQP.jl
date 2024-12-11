@@ -1,12 +1,36 @@
 ## mpsolve 
 # Compute the explicit solution to multi-parameteric QP
 function mpsolve(mpQP,Θ;opts=nothing, AS0 = nothing) # bounds_table as option
-    mpLDP = MPLDP(mpQP)
+    opts = Settings(opts)
+    # Hande bounds 
+    Δb = Θ.ub-Θ.lb 
+    if any(Δb .< -opts.eps_zero) 
+        opts.verbose > 0 && @error "Θ is empty"
+        return nothing,nothing
+    end
+
+
+    # Check if some parameters are fixed
+    fix_ids = findall(Δb .< opts.eps_zero) # ub[fix_ids] = lb[fix_ids]
+    fix_vals = Θ.ub[fix_ids]
+    if(!isempty(fix_ids))
+        opts.verbose > 0 && @warn "θ$fix_ids fixed at $fix_vals"
+        free_ids = setdiff(1:length(Θ.ub),fix_ids)
+        if hasproperty(Θ,:A)
+            Θ=(A=Θ.A[free_ids,:], b = Θ.b+Θ.A[fix_ids,:]'*fix_vals, 
+               lb=Θ.lb[free_ids],ub=Θ.ub[free_ids])
+        else
+            Θ=(lb=Θ.lb[free_ids],ub=Θ.ub[free_ids])
+        end
+    end
+
+    # Setup LDP and normalize
+    mpLDP = MPLDP(mpQP;fix_ids,fix_vals)
     mpLDP, Θ, tf = normalize_parameters(mpLDP,Θ)
+
     if(isnothing(AS0))
         AS0 = compute_AS0(mpLDP,Θ)
     end
-    opts = Settings(opts)
     F,info =  mpdaqp_explicit(mpLDP,Θ,AS0;opts)
     return Solution(F,tf.scaling,tf.center,opts,info.status), info
 end
@@ -15,7 +39,22 @@ function mpdaqp_explicit(prob,Θ,AS0;opts = Settings())
     time_limit = opts.time_limit*1e9;
     status = :Solved
     t0  = time_ns()
-    nth,m = size(prob.d);
+    m = size(prob.d,2);
+
+    # Handle zero rows
+    id_cands = findall(prob.norm_factors .> opts.eps_zero)
+    if(length(id_cands) < m)
+        id_zeros = findall(prob.norm_factors .≤ opts.eps_zero)
+        opts.verbose >  0 && @warn "Rows $id_zeros in A are zero → seen as parameter constraints" 
+        if hasproperty(Θ,:Ath)
+            A = [Θ.A -prob.d[1:end-1,id_zeros]]
+            b = [Θ.b; prob.d[end,id_zeros]]
+        else
+            A = -prob.d[1:end-1,id_zeros]
+            b = prob.d[end,id_zeros]
+        end
+        Θ = (A= A, b = b,lb = Θ.lb, ub = Θ.ub) 
+    end
 
     # Initialize
     ws=setup_workspace(Θ,m;opts);
@@ -23,6 +62,7 @@ function mpdaqp_explicit(prob,Θ,AS0;opts = Settings())
     push!(ws.S,as0)
     push!(ws.explored,as0)
     j = 0
+
 
     # Start exploration 
     while(!isempty(ws.S) || !isempty(ws.Sdown) || !isempty(ws.Sup))
@@ -34,10 +74,10 @@ function mpdaqp_explicit(prob,Θ,AS0;opts = Settings())
         end
 
         while(length(ws.S) < opts.chunk_size && !isempty(ws.Sdown)) # First try to move down...
-            explore_supersets(pop!(ws.Sdown),ws,prob,m,ws.S)
+            explore_supersets(pop!(ws.Sdown),ws,prob,id_cands,ws.S)
         end
         while(length(ws.S) < opts.chunk_size && !isempty(ws.Sup)) # ... then try to move up
-            explore_subsets(pop!(ws.Sup),ws,prob,m,ws.S)
+            explore_subsets(pop!(ws.Sup),ws,prob,id_cands,ws.S)
         end
 
         opts.verbose>0 && print_ws(ws,(j+=1))
@@ -45,13 +85,10 @@ function mpdaqp_explicit(prob,Θ,AS0;opts = Settings())
         # Process pending AS
         while(!isempty(ws.S))
             as = pop!(ws.S);
-            region,LICQ_broken,down= isoptimal(as,ws,prob,opts)
-            if(!isnothing(region))
-                push!(ws.F,region)
-                down && push!(ws.Sdown,as)
-                push!(ws.Sup,as)
-            end
-            LICQ_broken && push!(ws.Sup,as)
+            region,up,down= isoptimal(as,ws,prob,opts)
+            !isnothing(region) && push!(ws.F,region)
+            up && push!(ws.Sup,as)
+            down && push!(ws.Sdown,as)
         end
 
     end
@@ -72,12 +109,12 @@ function isoptimal(as,ws,prob,opts)
     if(opts.factorization == :qr)
         R = (ws.nAS > 0) ? UpperTriangular(qr(prob.M[ws.AS,:]').R) : UpperTriangular(zeros(0,0))
         if(any(abs(R[i,i]) <1e-12 for i in 1:ws.nAS))
-            return nothing,true,false # LICQ broken
+            return nothing,true,false # LICQ broken => explore up
         end
     else
         C = cholesky(prob.MM[ws.AS,ws.AS],check=false)
         if(!issuccess(C))
-            return nothing,true,false # LICQ broken
+            return nothing,true,false # LICQ broken = explore up
         end
         R = UpperTriangular(C.factors)
     end
@@ -99,7 +136,7 @@ function isoptimal(as,ws,prob,opts)
 
     ws.nLPs+=1
     if isfeasible(ws.DAQP_workspace, ws.m, 0)
-        return extract_CR(ws,prob,λTH,λC)...,(ws.nAS ≤ prob.n)
+        return extract_CR(ws,prob,λTH,λC),true,ws.nAS ≤ prob.n
     else
         return nothing,false,false
     end
@@ -134,9 +171,9 @@ function compute_μ(prob,AS,IS,λTH,λC,μTH,μC)
     μC .=  @view prob.d[end,IS]; mul!(μC,MMAI',λC,1,1)
 end
 ## Explore subsets 
-function explore_subsets(as,ws,prob,m,S)
+function explore_subsets(as,ws,prob,id_cands,S)
     UIntX = typeof(as)
-    for i in 1:m 
+    for i in id_cands
         mask = UIntX(1)<<(i-1)
         as&mask ==  0 && continue
         as_new = as&~mask
@@ -147,9 +184,9 @@ function explore_subsets(as,ws,prob,m,S)
     end
 end
 ## Explore supersets 
-function explore_supersets(as,ws,prob,m,S)
+function explore_supersets(as,ws,prob,id_cands,S)
     UIntX = typeof(as)
-    for i in 1:m 
+    for i in id_cands
         mask = UIntX(1)<<(i-1);
         as&(mask|(1<<(prob.bounds_table[i]-1))) != 0 && continue
         #as&mask != 0 && continue
