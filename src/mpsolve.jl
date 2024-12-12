@@ -24,17 +24,17 @@ function mpsolve(mpQP,Θ;opts=nothing, AS0 = nothing) # bounds_table as option
         end
     end
 
-    # Setup LDP and normalize
-    mpLDP = MPLDP(mpQP;fix_ids,fix_vals)
-    mpLDP, Θ, tf = normalize_parameters(mpLDP,Θ)
+    # Setup parametric problem and normalize
+    prob = setup_mpp(mpQP;fix_ids,fix_vals)
+    prob, Θ, tf = normalize_parameters(prob,Θ)
 
     if(isnothing(AS0))
-        AS0 = compute_AS0(mpLDP,Θ)
+        AS0 = compute_AS0(prob,Θ)
     end
     if(isnothing(AS0))
         F,info = CriticalRegion[], (solve_time = 0, nCR = 0, nLPs = 0, nExplored = 0,status=:NoFeasibleParameter)
     else
-        F,info = mpdaqp_explicit(mpLDP,Θ,AS0;opts)
+        F,info = mpdaqp_explicit(prob,Θ,AS0;opts)
     end
     return Solution(F,tf.scaling,tf.center,opts,info.status), info
 end
@@ -43,7 +43,7 @@ function mpdaqp_explicit(prob,Θ,AS0;opts = Settings())
     time_limit = opts.time_limit*1e9;
     status = :Solved
     t0  = time_ns()
-    m = size(prob.d,2);
+    m = length(prob.norm_factors);
 
     # Handle zero rows
     id_cands = findall(prob.norm_factors .> opts.eps_zero)
@@ -80,10 +80,10 @@ function mpdaqp_explicit(prob,Θ,AS0;opts = Settings())
         end
 
         while(length(ws.S) < opts.chunk_size && !isempty(ws.Sdown)) # First try to move down...
-            explore_supersets(pop!(ws.Sdown),ws,prob,id_cands,ws.S)
+            explore_supersets(pop!(ws.Sdown),ws,id_cands,ws.S,prob.bounds_table)
         end
         while(length(ws.S) < opts.chunk_size && !isempty(ws.Sup)) # ... then try to move up
-            explore_subsets(pop!(ws.Sup),ws,prob,id_cands,ws.S)
+            explore_subsets(pop!(ws.Sup),ws,id_cands,ws.S)
         end
 
         opts.verbose>0 && print_ws(ws,(j+=1))
@@ -112,28 +112,9 @@ function isoptimal(as,ws,prob,opts)
     uint2as(as,ws,prob.bounds_table)
     ws.nAS > prob.n  && return nothing,true,false # LICQ trivially broken
 
-    if(opts.factorization == :qr)
-        R = (ws.nAS > 0) ? UpperTriangular(qr(prob.M[ws.AS,:]').R) : UpperTriangular(zeros(0,0))
-        if(any(abs(R[i,i]) <1e-12 for i in 1:ws.nAS))
-            return nothing,true,false # LICQ broken => explore up
-        end
-    else
-        C = cholesky(prob.MM[ws.AS,ws.AS],check=false)
-        if(!issuccess(C))
-            return nothing,true,false # LICQ broken = explore up
-        end
-        R = UpperTriangular(C.factors)
-    end
-
-    # Compute λ
-    λTH = @view ws.Ath[:,ws.m0+1:ws.m0+ws.nAS]
-    λC = @view ws.bth[ws.m0+1:ws.m0+ws.nAS]
-    compute_λ(prob,ws.AS,ws.IS,R,λTH,λC)
-
-    # Compute μ
-    μTH = @view ws.Ath[:,ws.m0+ws.nAS+1:end]
-    μC = @view ws.bth[ws.m0+ws.nAS+1:end]
-    compute_μ(prob,ws.AS,ws.IS,λTH,λC,μTH,μC)
+    # Compute λ and μ 
+    LICQ_holds = compute_λ_and_μ(ws,prob,opts)
+    LICQ_holds || return nothing,true,false # LICQ broken => explore up
 
     # Reset feasibility workspace
     reset_workspace(ws) 
@@ -142,7 +123,7 @@ function isoptimal(as,ws,prob,opts)
 
     ws.nLPs+=1
     if isfeasible(ws.DAQP_workspace, ws.m, 0)
-        return extract_CR(ws,prob,λTH,λC),true,ws.nAS ≤ prob.n
+        return extract_CR(ws,prob),true,ws.nAS ≤ prob.n
     else
         return nothing,false,false
     end
@@ -167,17 +148,55 @@ function normalize_model(ws;eps_zero=1e-12)
     return true
 end
 ## Compute slacks 
-function compute_λ(prob,AS,IS,R,λTH,λC)
-    λTH .= @view prob.d[1:end-1,AS]; rdiv!(rdiv!(λTH, R), adjoint(R))
-    λC .= -@view prob.d[end,AS]; ldiv!(R, ldiv!(adjoint(R), λC))
+function compute_λ_and_μ(ws,prob::MPLDP,opts)
+    if(opts.factorization == :qr)
+        R = (ws.nAS > 0) ? UpperTriangular(qr(prob.M[ws.AS,:]').R) : UpperTriangular(zeros(0,0))
+        if(any(abs(R[i,i]) <1e-12 for i in 1:ws.nAS))
+            return false 
+        end
+    else
+        C = cholesky(prob.MM[ws.AS,ws.AS],check=false)
+        if(!issuccess(C))
+            return false 
+        end
+        R = UpperTriangular(C.factors)
+    end
+
+    # Compute λ
+    λTH = @view ws.Ath[:,ws.m0+1:ws.m0+ws.nAS]
+    λC = @view ws.bth[ws.m0+1:ws.m0+ws.nAS]
+    λTH .= @view prob.d[1:end-1,ws.AS]; rdiv!(rdiv!(λTH, R), adjoint(R))
+    λC .= -@view prob.d[end,ws.AS]; ldiv!(R, ldiv!(adjoint(R), λC))
+    # Compute μ
+    μTH = @view ws.Ath[:,ws.m0+ws.nAS+1:end]
+    μC = @view ws.bth[ws.m0+ws.nAS+1:end]
+    MMAI = prob.MM[ws.AS,ws.IS]
+    μTH .= @view prob.d[1:end-1,ws.IS]; mul!(μTH,λTH,MMAI,1,-1)
+    μC .=  @view prob.d[end,ws.IS]; mul!(μC,MMAI',λC,1,1)
+    return true 
 end
-function compute_μ(prob,AS,IS,λTH,λC,μTH,μC)
-    MMAI = prob.MM[AS,IS]
-    μTH .= @view prob.d[1:end-1,IS]; mul!(μTH,λTH,MMAI,1,-1)
-    μC .=  @view prob.d[end,IS]; mul!(μC,MMAI',λC,1,1)
+
+function compute_λ_and_μ(ws,prob::MPQP,opts)
+    Q,R = qr(prob.A[ws.AS,:]')
+    size(R,1) < ws.nAS && return false # LICQ broken
+    Q = Q*(1.0*I) # (to get explicit representation of Q) TODO: do inplace with lmul!
+    Y,Z = Q[:,1:ws.nAS], Q[:,ws.nAS:end]
+
+    Hr = Z'*prob.H*Z
+    C = cholesky(Hr,check=false)
+    if(!issuccess(C))
+        return false 
+    end
+    Rh = UpperTriangular(C.factors)
+
+    xy = R'/B
+    xz = -Z'*(H*Y*xy+mpQP.F) 
+    x = Y*xy+Z*xz
+    λ = -R\(Y'*(prob.H*x+prob.Y))
+    return true
 end
 ## Explore subsets 
-function explore_subsets(as,ws,prob,id_cands,S)
+function explore_subsets(as,ws,id_cands,S)
     UIntX = typeof(as)
     for i in id_cands
         mask = UIntX(1)<<(i-1)
@@ -190,11 +209,11 @@ function explore_subsets(as,ws,prob,id_cands,S)
     end
 end
 ## Explore supersets 
-function explore_supersets(as,ws,prob,id_cands,S)
+function explore_supersets(as,ws,id_cands,S,bounds_table)
     UIntX = typeof(as)
     for i in id_cands
         mask = UIntX(1)<<(i-1);
-        as&(mask|(1<<(prob.bounds_table[i]-1))) != 0 && continue
+        as&(mask|(1<<(bounds_table[i]-1))) != 0 && continue
         #as&mask != 0 && continue
         as_new = as|mask
         if as_new ∉ ws.explored

@@ -19,6 +19,17 @@ struct MPLDP
     norm_factors::Vector{Float64}
     eq_ids::Vector{Int64}
 end
+struct MPQP
+    H::Matrix{Float64}
+    F::Matrix{Float64}
+    A::Matrix{Float64}
+    B::Matrix{Float64}
+    n_theta::Int64
+    n::Int64
+    bounds_table::Vector{Int64}
+    norm_factors::Vector{Float64}
+    eq_ids::Vector{Int64}
+end
 
 Base.@kwdef mutable struct Settings 
     eps_zero::Float64 = 1e-12
