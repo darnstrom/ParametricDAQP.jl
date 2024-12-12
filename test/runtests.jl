@@ -231,3 +231,17 @@ end
     sol,info = ParametricDAQP.mpsolve(mpQP,(lb=Θ.lb[3:4], ub = Θ.ub[3:4]);opts);
     @test Nref == length(sol.CRs)
 end
+
+@testset "Equality constraint" begin
+    n,m,nth = 3,10,4
+    tol = 1e-5
+
+    mpQP,Θ = generate_mpQP(n,m,nth)
+    mpQP = merge(mpQP,(eq_ids=[5],))
+
+    opts = ParametricDAQP.Settings()
+    sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
+    for cr in sol.CRs
+        @test 5 ∈ cr.AS
+    end
+end
