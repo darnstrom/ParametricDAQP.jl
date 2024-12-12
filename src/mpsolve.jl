@@ -178,9 +178,12 @@ end
 
 function compute_λ_and_μ(ws,prob::MPQP,opts)
     Q,R = qr(prob.A[ws.AS,:]')
-    size(R,1) < ws.nAS && return false # LICQ broken
-    Q = Q*(1.0*I) # (to get explicit representation of Q) TODO: do inplace with lmul!
-    Y,Z = Q[:,1:ws.nAS], Q[:,ws.nAS:end]
+    if(size(R,1) < ws.nAS || any(abs(R[i,i]) <1e-12 for i in 1:ws.nAS))
+        return false # LICQ broken
+    end
+    R = UpperTriangular(R)
+    Q *= 1.0 # (to get explicit representation of Q) TODO: do inplace with lmul!
+    Y,Z = Q[:,1:ws.nAS], Q[:,ws.nAS+1:end]
 
     Hr = Z'*prob.H*Z
     C = cholesky(Hr,check=false)
@@ -189,10 +192,24 @@ function compute_λ_and_μ(ws,prob::MPQP,opts)
     end
     Rh = UpperTriangular(C.factors)
 
-    xy = R'/B
-    xz = -Z'*(H*Y*xy+mpQP.F) 
-    x = Y*xy+Z*xz
-    λ = -R\(Y'*(prob.H*x+prob.Y))
+    xy = prob.B[:,ws.AS]/R
+    xz = -(xy*Y'*prob.H+prob.F)*Z; rdiv!(rdiv!(xz, Rh), adjoint(Rh))
+    x = xy*Y'+xz*Z'
+    rhs = (x*prob.H+prob.F)*Y
+
+    λTH = @view ws.Ath[:,ws.m0+1:ws.m0+ws.nAS]
+    λC = @view ws.bth[ws.m0+1:ws.m0+ws.nAS]
+    λTH .= @view rhs[1:end-1,:]; rdiv!(λTH, adjoint(R))
+    λC .= -@view rhs[end,:]; ldiv!(adjoint(R), λC)
+
+    μTH = @view ws.Ath[:,ws.m0+ws.nAS+1:end]
+    μC = @view ws.bth[ws.m0+ws.nAS+1:end]
+    AIt = prob.A[ws.IS,:]
+    μTH .= @view prob.B[1:end-1,ws.IS]; mul!(μTH,view(x,1:prob.n_theta,:),AIt',1,-1)
+    μC .=  @view prob.B[end,ws.IS]; mul!(μC,AIt,x[end,:],-1,1)
+
+    ws.x = x # Save x for later
+
     return true
 end
 ## Explore subsets 

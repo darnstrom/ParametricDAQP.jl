@@ -80,6 +80,7 @@ mutable struct Workspace{T<:Integer}
     AS::BitVector
     nAS::Int64
     norm_factors:: Vector{Float64}
+    x::Matrix{Float64}
 end
 
 struct Solution

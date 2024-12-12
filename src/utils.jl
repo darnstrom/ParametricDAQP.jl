@@ -183,7 +183,7 @@ function setup_workspace(Θ,n_constr;opts=Settings())::Workspace
     max_radius =  isempty(Θ.ub) ? nth : nth*(maximum(Θ.ub)^2)/2;
     ws = Workspace{UIntX}(A,b,blower,zeros(Cint,m_max),0,m0,p,falses(0,0),0, 
                        UIntX[], UIntX[], UIntX[], CriticalRegion[],Set{UIntX}(),opts,
-                       falses(n_constr),falses(n_constr),0, zeros(n_constr));
+                       falses(n_constr),falses(n_constr),0, zeros(n_constr),zeros(0,0));
     DAQP.init_c_workspace_ldp(p,ws.Ath,ws.bth,ws.bth_lower,ws.sense;max_radius)
     return ws 
 end
@@ -214,8 +214,8 @@ end
 
 ## Extract Critical region 
 function extract_CR(ws,prob)
-    if(ws.opts.postcheck_rank && rank(view(prob.MM,ws.AS,ws.AS))<ws.nAS)
-        return nothing
+    if(ws.opts.postcheck_rank) 
+        islowrank(prob,ws) && return nothing
     end
     if(ws.opts.store_points)
         dws = unsafe_load(Ptr{DAQP.Workspace}(ws.DAQP_workspace))
@@ -250,6 +250,9 @@ function extract_CR(ws,prob)
 
     return CriticalRegion(AS,Ath,bth,x,λ,θ)
 end
+## Check rank
+islowrank(prob::MPLDP,ws) = rank(view(prob.MM,ws.AS,ws.AS))<ws.nAS
+islowrank(prob::MPQP,ws) = false # TODO
 ## Extract solution
 function extract_solution(AS,prob::MPLDP,ws)
     λ = [ws.Ath[:,ws.m0+1:ws.m0+ws.nAS];-ws.bth[ws.m0+1:ws.m0+ws.nAS]']
@@ -267,6 +270,11 @@ function extract_solution(AS,prob::MPLDP,ws)
             rdiv!(view(λ,:,i),-prob.norm_factors[ASi])
         end
     end
+    return x,λ
+end
+function extract_solution(AS,prob::MPQP,ws)
+    λ = [ws.Ath[:,ws.m0+1:ws.m0+ws.nAS];-ws.bth[ws.m0+1:ws.m0+ws.nAS]']
+    x = ws.x
     return x,λ
 end
 ## Compute AS0 
@@ -292,7 +300,11 @@ function compute_AS0(mpQP::MPQP,Θ)
     # TODO: set eps_prox ≠ 0
     senses = zeros(Cint,size(mpQP.B,2));
     senses[mpQP.eq_ids] .= DAQP.EQUALITY
-    _,_,exitflag,info= DAQP.quadprog(mpQP.H,mpQP.F[end,:],mpQP.A,mpQP.B[end,:],Float64[], senses);
+    d = DAQP.Model();
+    DAQP.settings(d,Dict(:eps_prox=>1e-6)) # Since the Hessian is singular
+    DAQP.setup(d,mpQP.H,mpQP.F[end,:],mpQP.A,mpQP.B[end,:],Float64[], senses);
+    x,fval,exitflag,info = DAQP.solve(d);
+    println(info)
     exitflag == 1 && return findall(abs.(info.λ).> 0)
 
     # Solve lifted feasibility problem in (x,θ)-space to find initial point 
@@ -302,7 +314,10 @@ function compute_AS0(mpQP::MPQP,Θ)
         return nothing
     end
     θ = x[1:mpQP.n_theta]
-    _,_,exitflag,info= DAQP.quadprog(mpQP.H,mpQP.F'*[θ;1],mpQP.A,mpQP.B'*[θ;1],Float64[],senses);
+    d = DAQP.Model();
+    DAQP.settings(d,Dict(:eps_prox=>1e-6)) # Since the Hessian is singular
+    DAQP.setup(d,mpQP.H,mpQP.F'*[θ;1],mpQP.A,mpQP.B'*[θ;1],Float64[],senses);
+    x,fval,exitflag,info = DAQP.solve(d);
     return findall(abs.(info.λ).> 0)
 end
 ## Get CRs 
