@@ -1,5 +1,5 @@
 ## Setup MPLDP from MPQP
-function MPLDP(mpQP;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
+function setup_mpp(mpQP;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
     if hasproperty(mpQP,:f_theta)
         f_theta = mpQP.f_theta 
     elseif hasproperty(mpQP,:F)
@@ -22,13 +22,26 @@ function MPLDP(mpQP;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
     n, nth = size(f_theta) 
     m = length(mpQP.b)
 
-    free_ids = setdiff(1:nth,fix_ids)
+    bnd_tbl = (haskey(mpQP,:bounds_table) && !isnothing(mpQP.bounds_table)) ? mpQP.bounds_table : collect(1:m)
 
-    R = cholesky((mpQP.H+mpQP.H')/2)
-    M = mpQP.A/R.U
-    V = (R.L)\[f_theta[:,free_ids] mpQP.f+f_theta[:,fix_ids]*fix_vals]
-    d = Matrix(([W[:,free_ids] mpQP.b+W[:,fix_ids]*fix_vals] + M*V)')# Col. major...
+
+    free_ids = setdiff(1:nth,fix_ids)
     nth = length(free_ids) 
+
+    F = [f_theta[:,free_ids] mpQP.f+f_theta[:,fix_ids]*fix_vals]
+    B = [W[:,free_ids] mpQP.b+W[:,fix_ids]*fix_vals]
+
+    H = (mpQP.H+mpQP.H')/2
+    R = cholesky(H, check=false)
+    if(!issuccess(R)) # Cannot formulate as an LDP => return MPQP
+        out_inds = haskey(mpQP,:out_inds) && !isnothing(mpQP.out_inds) ? mpQP.out_inds : collect(1:n)
+
+        return MPQP(H,Matrix(F'),mpQP.A,Matrix(B'),nth,n,bnd_tbl,ones(m),eq_ids,n-rank(H),out_inds)
+    end
+
+    M = mpQP.A/R.U
+    V = (R.L)\F
+    d = Matrix((B + M*V)')# Col. major...
 
     norm_factors = ones(m)
     if(normalize)
@@ -41,8 +54,6 @@ function MPLDP(mpQP;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
         end
     end
 
-    bnd_tbl = (haskey(mpQP,:bounds_table) && !isnothing(mpQP.bounds_table)) ? mpQP.bounds_table : collect(1:m)
-
     MRt = M/R.L
     RinvV = -(R.U\V)'
     if haskey(mpQP,:out_inds) && !isnothing(mpQP.out_inds)
@@ -54,7 +65,7 @@ function MPLDP(mpQP;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
 end
 
 ## Normalize parameters to -1 ≤ θ ≤ 1
-function normalize_parameters(prob,Θ)
+function normalize_parameters(prob::MPLDP,Θ)
     if(isempty(Θ.ub)) # assume already normalized
         return prob,Θ,(center=0,scaling = 1)
     end
@@ -65,6 +76,26 @@ function normalize_parameters(prob,Θ)
     for i in 1:nth
         prob.d[i,:] *= norm_factors[i];
         prob.RinvV[i,:] *= norm_factors[i];
+    end
+
+    Ath = haskey(Θ,:A) ? Θ.A : zeros(nth,0);
+    bth = haskey(Θ,:b) ? Θ.b : zeros(0);
+    Θ =(A=norm_factors.*Ath, b = bth-(center'*Ath)[:], # TODO: verify
+        lb = -ones(nth), ub = ones(nth));
+    return prob, Θ,(center=center, scaling = 1 ./ norm_factors)
+end
+function normalize_parameters(prob::MPQP,Θ)
+    if(isempty(Θ.ub)) # assume already normalized
+        return prob,Θ,(center=0,scaling = 1)
+    end
+    nth = length(Θ.lb);
+    center = (Θ.lb+Θ.ub)/2;
+    norm_factors = (Θ.ub-Θ.lb)/2;
+    prob.B[end:end,:] += center'*prob.B[1:end-1,:];
+    prob.F[end:end,:] += center'*prob.F[1:end-1,:];
+    for i in 1:nth
+        prob.B[i,:] *= norm_factors[i];
+        prob.F[i,:] *= norm_factors[i];
     end
 
     Ath = haskey(Θ,:A) ? Θ.A : zeros(nth,0);
@@ -155,7 +186,7 @@ function setup_workspace(Θ,n_constr;opts=Settings())::Workspace
     max_radius =  isempty(Θ.ub) ? nth : nth*(maximum(Θ.ub)^2)/2;
     ws = Workspace{UIntX}(A,b,blower,zeros(Cint,m_max),0,m0,p,falses(0,0),0, 
                        UIntX[], UIntX[], UIntX[], CriticalRegion[],Set{UIntX}(),opts,
-                       falses(n_constr),falses(n_constr),0, zeros(n_constr));
+                       falses(n_constr),falses(n_constr),0, zeros(n_constr),zeros(0,0));
     DAQP.init_c_workspace_ldp(p,ws.Ath,ws.bth,ws.bth_lower,ws.sense;max_radius)
     return ws 
 end
@@ -185,9 +216,9 @@ function uint2as(u, ws, bounds_table)
 end
 
 ## Extract Critical region 
-function extract_CR(ws,prob,λTH,λC)
-    if(ws.opts.postcheck_rank && rank(view(prob.MM,ws.AS,ws.AS))<ws.nAS)
-        return nothing
+function extract_CR(ws,prob)
+    if(ws.opts.postcheck_rank) 
+        islowrank(prob,ws) && return nothing
     end
     if(ws.opts.store_points)
         dws = unsafe_load(Ptr{DAQP.Workspace}(ws.DAQP_workspace))
@@ -197,7 +228,7 @@ function extract_CR(ws,prob,λTH,λC)
     end
     if(ws.opts.lowdim_tol > 0)
         rhs_offset = ws.opts.lowdim_tol + 1e-6 # + 1e-6 to account for tolerance in DAQP
-        ws.sense[1:ws.m].=0
+        ccall((:deactivate_constraints,DAQP.libdaqp),Cvoid,(Ptr{Cvoid},),ws.DAQP_workspace);
         ccall((:reset_daqp_workspace,DAQP.libdaqp),Cvoid,(Ptr{Cvoid},),ws.DAQP_workspace);
         ws.bth[1:ws.m].-=rhs_offset; # Shrink region 
         if !isfeasible(ws.DAQP_workspace, ws.m, 0) # Check if region is narrow and, hence, should be removed
@@ -206,29 +237,16 @@ function extract_CR(ws,prob,λTH,λC)
         ws.bth[1:ws.m].+=rhs_offset; # Restore 
     end
 
-    AS = ws.opts.store_AS ? findall(ws.AS) : Int64[]
+    AS = ws.opts.store_AS || ws.opts.store_regions ? findall(ws.AS) : Int64[]
     # Extract regions/solution
     if(ws.opts.store_regions)
         if(ws.opts.remove_redundant)
+            ccall((:deactivate_constraints,DAQP.libdaqp),Cvoid,(Ptr{Cvoid},),ws.DAQP_workspace);
             Ath,bth = minrep(ws.DAQP_workspace); 
         else
             Ath,bth = ws.Ath[:,1:ws.m],ws.bth[1:ws.m];
         end
-        # Renormalize dual variable from half-plane normalization
-        λ = [λTH;-λC']
-        for i in 1:ws.nAS
-            rmul!(view(λ,:,i),ws.norm_factors[i])
-        end
-
-        # Compute primal solution x[1:end-1,:]' θ + x[end,:]
-        x = copy(prob.RinvV); mul!(x,λ,prob.MRt[ws.AS,:],1,1)
- 
-        # Renormalize dual variable from LDP transform
-        if ws.opts.store_dual & ws.opts.store_AS
-            for (i,ASi) in enumerate(AS)
-                rdiv!(view(λ,:,i),-prob.norm_factors[ASi])
-            end
-        end
+        x,λ = extract_solution(AS,prob,ws)
     else
         Ath,bth = zeros(prob.n_theta,0), zeros(0)
         x,λ = zeros(0,0),zeros(0,0);
@@ -236,15 +254,41 @@ function extract_CR(ws,prob,λTH,λC)
 
     return CriticalRegion(AS,Ath,bth,x,λ,θ)
 end
+## Check rank
+islowrank(prob::MPLDP,ws) = rank(view(prob.MM,ws.AS,ws.AS))<ws.nAS
+islowrank(prob::MPQP,ws) = false # TODO
+## Extract solution
+function extract_solution(AS,prob::MPLDP,ws)
+    λ = [ws.Ath[:,ws.m0+1:ws.m0+ws.nAS];-ws.bth[ws.m0+1:ws.m0+ws.nAS]']
+    # Renormalize dual variable from half-plane normalization
+    for i in 1:ws.nAS
+        rmul!(view(λ,:,i),ws.norm_factors[i])
+    end
+
+    # Compute primal solution x[1:end-1,:]' θ + x[end,:]
+    x = copy(prob.RinvV); mul!(x,λ,prob.MRt[ws.AS,:],1,1)
+
+    # Renormalize dual variable from LDP transform
+    if ws.opts.store_dual & ws.opts.store_AS
+        for (i,ASi) in enumerate(AS)
+            rdiv!(view(λ,:,i),-prob.norm_factors[ASi])
+        end
+    end
+    return x,λ
+end
+function extract_solution(AS,prob::MPQP,ws)
+    λ = [ws.Ath[:,ws.m0+1:ws.m0+ws.nAS];-ws.bth[ws.m0+1:ws.m0+ws.nAS]']
+    x = ws.x[:,prob.out_inds]
+    return x,λ
+end
 ## Compute AS0 
-function compute_AS0(mpLDP,Θ)
+function compute_AS0(mpLDP::MPLDP,Θ)
     # Center in box is zero -> dtot = d[end,:]
     senses = zeros(Cint,size(mpLDP.d,2));
     senses[mpLDP.eq_ids] .= DAQP.EQUALITY
     _,_,exitflag,info= DAQP.quadprog(zeros(0,0),zeros(0),mpLDP.M,mpLDP.d[end,:],Float64[], senses);
-    if exitflag == 1
-        return findall(abs.(info.λ).> 0)
-    end
+    exitflag == 1 && return findall(abs.(info.λ).> 0)
+
     # Solve lifted feasibility problem in (x,θ)-space to find initial point 
     x,_,exitflag,info= DAQP.quadprog(zeros(0,0),zeros(0),[-mpLDP.d[1:end-1,:]' mpLDP.M],mpLDP.d[end,:],Float64[],senses);
     if exitflag != 1
@@ -253,6 +297,30 @@ function compute_AS0(mpLDP,Θ)
     end
     θ = x[1:mpLDP.n_theta]
     _,_,exitflag,info= DAQP.quadprog(zeros(0,0),zeros(0),mpLDP.M,mpLDP.d'*[θ;1],Float64[],senses);
+    return findall(abs.(info.λ).> 0)
+end
+function compute_AS0(mpQP::MPQP,Θ)
+    # Center in box is zero -> dtot = d[end,:]
+    # TODO: set eps_prox ≠ 0
+    senses = zeros(Cint,size(mpQP.B,2));
+    senses[mpQP.eq_ids] .= DAQP.EQUALITY
+    d = DAQP.Model();
+    DAQP.settings(d,Dict(:eps_prox=>1e-6)) # Since the Hessian is singular
+    DAQP.setup(d,mpQP.H,mpQP.F[end,:],mpQP.A,mpQP.B[end,:],Float64[], senses);
+    x,fval,exitflag,info = DAQP.solve(d);
+    exitflag == 1 && return findall(abs.(info.λ).> 0)
+
+    # Solve lifted feasibility problem in (x,θ)-space to find initial point 
+    x,_,exitflag,info= DAQP.quadprog(zeros(0,0),zeros(0),[-mpQP.B[1:end-1,:]' mpQP.A],mpQP.B[end,:],Float64[],senses);
+    if exitflag != 1
+        @warn "There is no parameter that makes the problem feasible"
+        return nothing
+    end
+    θ = x[1:mpQP.n_theta]
+    d = DAQP.Model();
+    DAQP.settings(d,Dict(:eps_prox=>1e-6)) # Since the Hessian is singular
+    DAQP.setup(d,mpQP.H,mpQP.F'*[θ;1],mpQP.A,mpQP.B'*[θ;1],Float64[],senses);
+    x,fval,exitflag,info = DAQP.solve(d);
     return findall(abs.(info.λ).> 0)
 end
 ## Get CRs 
