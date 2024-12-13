@@ -20,7 +20,7 @@ struct MPLDP
     eq_ids::Vector{Int64}
 end
 struct MPQP
-    H::Matrix{Float64}
+    H::AbstractMatrix
     F::Matrix{Float64}
     A::Matrix{Float64}
     B::Matrix{Float64}
@@ -29,6 +29,7 @@ struct MPQP
     bounds_table::Vector{Int64}
     norm_factors::Vector{Float64}
     eq_ids::Vector{Int64}
+    rank_defficiency::Int64
 end
 
 Base.@kwdef mutable struct Settings 

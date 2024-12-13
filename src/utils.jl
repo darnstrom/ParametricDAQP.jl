@@ -31,9 +31,10 @@ function setup_mpp(mpQP;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
     F = [f_theta[:,free_ids] mpQP.f+f_theta[:,fix_ids]*fix_vals]
     B = [W[:,free_ids] mpQP.b+W[:,fix_ids]*fix_vals]
 
-    R = cholesky((mpQP.H+mpQP.H')/2, check=false)
+    H = (mpQP.H+mpQP.H')/2
+    R = cholesky(H, check=false)
     if(!issuccess(R)) # Cannot formulate as an LDP => return MPQP
-        return MPQP(mpQP.H,Matrix(F'),mpQP.A,Matrix(B'),nth,n,bnd_tbl,ones(m),eq_ids)
+        return MPQP(H,Matrix(F'),mpQP.A,Matrix(B'),nth,n,bnd_tbl,ones(m),eq_ids,n-rank(H))
     end
 
     M = mpQP.A/R.U
@@ -225,7 +226,7 @@ function extract_CR(ws,prob)
     end
     if(ws.opts.lowdim_tol > 0)
         rhs_offset = ws.opts.lowdim_tol + 1e-6 # + 1e-6 to account for tolerance in DAQP
-        ws.sense[1:ws.m].=0
+        ccall((:deactivate_constraints,DAQP.libdaqp),Cvoid,(Ptr{Cvoid},),ws.DAQP_workspace);
         ccall((:reset_daqp_workspace,DAQP.libdaqp),Cvoid,(Ptr{Cvoid},),ws.DAQP_workspace);
         ws.bth[1:ws.m].-=rhs_offset; # Shrink region 
         if !isfeasible(ws.DAQP_workspace, ws.m, 0) # Check if region is narrow and, hence, should be removed
@@ -238,6 +239,7 @@ function extract_CR(ws,prob)
     # Extract regions/solution
     if(ws.opts.store_regions)
         if(ws.opts.remove_redundant)
+            ccall((:deactivate_constraints,DAQP.libdaqp),Cvoid,(Ptr{Cvoid},),ws.DAQP_workspace);
             Ath,bth = minrep(ws.DAQP_workspace); 
         else
             Ath,bth = ws.Ath[:,1:ws.m],ws.bth[1:ws.m];
@@ -304,7 +306,6 @@ function compute_AS0(mpQP::MPQP,Θ)
     DAQP.settings(d,Dict(:eps_prox=>1e-6)) # Since the Hessian is singular
     DAQP.setup(d,mpQP.H,mpQP.F[end,:],mpQP.A,mpQP.B[end,:],Float64[], senses);
     x,fval,exitflag,info = DAQP.solve(d);
-    println(info)
     exitflag == 1 && return findall(abs.(info.λ).> 0)
 
     # Solve lifted feasibility problem in (x,θ)-space to find initial point 

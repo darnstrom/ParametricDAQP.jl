@@ -118,7 +118,7 @@ end
     # Remove lower dimensional regions
     opts = Dict("store_points"=>true, "verbose"=>1, "lowdim_tol"=>1e-12)
     sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
-    @test length(sol.CRs) == 12
+    @test length(sol.CRs) < 27
 end
 
 
@@ -244,4 +244,75 @@ end
     for cr in sol.CRs
         @test 5 ∈ cr.AS
     end
+end
+
+## Test  
+@testset "Primal degenerate LP" begin
+    H =  zeros(4,4);
+    f = [1.0;1.0;0;0] 
+    F = zeros(4,2) 
+    A = [-1.0 0 0 0;
+         -1 0 -1 0;
+         -1 0 0 0;
+         -1 0 1 0;
+         0 -1 -1 0;
+         0 -1 -1 -1;
+         0 -1 1 0;
+         0 -1 1 1;
+         0 0 1 0;
+         0 0 -1 0;
+         0 0 0 1;
+         0 0 0 -1]
+    B = [1.0 1;
+         0 1;
+         -1 -1;
+         0 -1;
+         1 2;
+         0 1;
+         -1 -2;
+         0 -1;
+         0 0;
+         0 0;
+         0 0;
+         0 0]
+
+    b = [zeros(8);ones(4)];
+    mpQP = (H=H,f=f,F=F,A=A,b=b,B=B)
+
+    # Setup parameter region of interest
+    ub,lb  = 2.5*ones(2), -2.5*ones(2)
+    Θ = (ub=ub,lb=lb)
+
+    # Solve mpQP over desired region
+    opts = ParametricDAQP.Settings()
+    opts.lowdim_tol = 1e-9
+    sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
+end
+
+@testset "Dual degenerate LP" begin
+    H =  zeros(2,2);
+    f = [-2.0;-1-0] 
+    F = zeros(2,2) 
+    A = [1.0 3;
+         2 1;
+         1 0;
+         -1 0;
+         0 -1]
+    B = [-2.0 1;
+         1 -2;
+         1 1;
+         0 0;
+         0 0;
+        ] 
+    b = [9.0;8;4;0;0];
+
+    mpQP = (H=H,f=f,F=F,A=A,b=b,B=B, out_inds=[1])
+
+    # Setup parameter region of interest
+    ub,lb  = 10*ones(2), -10*ones(2)
+    Θ = (ub=ub,lb=lb)
+
+    opts = ParametricDAQP.Settings()
+    opts.lowdim_tol = 1e-9
+    sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
 end

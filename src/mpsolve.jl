@@ -113,8 +113,8 @@ function isoptimal(as,ws,prob,opts)
     ws.nAS > prob.n  && return nothing,true,false # LICQ trivially broken
 
     # Compute λ and μ 
-    LICQ_holds = compute_λ_and_μ(ws,prob,opts)
-    LICQ_holds || return nothing,true,false # LICQ broken => explore up
+    up, down = compute_λ_and_μ(ws,prob,opts)
+    (up || down) && return nothing,up,down # Degeneracy
 
     # Reset feasibility workspace
     reset_workspace(ws) 
@@ -152,12 +152,12 @@ function compute_λ_and_μ(ws,prob::MPLDP,opts)
     if(opts.factorization == :qr)
         R = (ws.nAS > 0) ? UpperTriangular(qr(prob.M[ws.AS,:]').R) : UpperTriangular(zeros(0,0))
         if(any(abs(R[i,i]) <1e-12 for i in 1:ws.nAS))
-            return false 
+            return true,false
         end
     else
         C = cholesky(prob.MM[ws.AS,ws.AS],check=false)
         if(!issuccess(C))
-            return false 
+            return true, false
         end
         R = UpperTriangular(C.factors)
     end
@@ -173,13 +173,15 @@ function compute_λ_and_μ(ws,prob::MPLDP,opts)
     MMAI = prob.MM[ws.AS,ws.IS]
     μTH .= @view prob.d[1:end-1,ws.IS]; mul!(μTH,λTH,MMAI,1,-1)
     μC .=  @view prob.d[end,ws.IS]; mul!(μC,MMAI',λC,1,1)
-    return true 
+    return false, false
 end
 
 function compute_λ_and_μ(ws,prob::MPQP,opts)
+    ws.nAS < prob.rank_defficiency && return false,true  # Trivially degenerate
+
     Q,R = qr(prob.A[ws.AS,:]')
     if(size(R,1) < ws.nAS || any(abs(R[i,i]) <1e-12 for i in 1:ws.nAS))
-        return false # LICQ broken
+        return true, false # LICQ broken -> explore up, do not explore down
     end
     R = UpperTriangular(R)
     Q *= 1.0 # (to get explicit representation of Q) TODO: do inplace with lmul!
@@ -188,7 +190,7 @@ function compute_λ_and_μ(ws,prob::MPQP,opts)
     Hr = Z'*prob.H*Z
     C = cholesky(Hr,check=false)
     if(!issuccess(C))
-        return false 
+        return false,true# do not explore up, explore down
     end
     Rh = UpperTriangular(C.factors)
 
@@ -200,7 +202,7 @@ function compute_λ_and_μ(ws,prob::MPQP,opts)
     λTH = @view ws.Ath[:,ws.m0+1:ws.m0+ws.nAS]
     λC = @view ws.bth[ws.m0+1:ws.m0+ws.nAS]
     λTH .= @view rhs[1:end-1,:]; rdiv!(λTH, adjoint(R))
-    λC .= -@view rhs[end,:]; ldiv!(adjoint(R), λC)
+    λC .= -@view rhs[end,:]; ldiv!(R, λC)
 
     μTH = @view ws.Ath[:,ws.m0+ws.nAS+1:end]
     μC = @view ws.bth[ws.m0+ws.nAS+1:end]
@@ -210,7 +212,7 @@ function compute_λ_and_μ(ws,prob::MPQP,opts)
 
     ws.x = x # Save x for later
 
-    return true
+    return false,false
 end
 ## Explore subsets 
 function explore_subsets(as,ws,id_cands,S)
