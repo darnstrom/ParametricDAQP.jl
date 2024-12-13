@@ -34,7 +34,9 @@ function setup_mpp(mpQP;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
     H = (mpQP.H+mpQP.H')/2
     R = cholesky(H, check=false)
     if(!issuccess(R)) # Cannot formulate as an LDP => return MPQP
-        return MPQP(H,Matrix(F'),mpQP.A,Matrix(B'),nth,n,bnd_tbl,ones(m),eq_ids,n-rank(H))
+        out_inds = haskey(mpQP,:out_inds) && !isnothing(mpQP.out_inds) ? mpQP.out_inds : collect(1:n)
+
+        return MPQP(H,Matrix(F'),mpQP.A,Matrix(B'),nth,n,bnd_tbl,ones(m),eq_ids,n-rank(H),out_inds)
     end
 
     M = mpQP.A/R.U
@@ -276,7 +278,7 @@ function extract_solution(AS,prob::MPLDP,ws)
 end
 function extract_solution(AS,prob::MPQP,ws)
     λ = [ws.Ath[:,ws.m0+1:ws.m0+ws.nAS];-ws.bth[ws.m0+1:ws.m0+ws.nAS]']
-    x = ws.x
+    x = ws.x[:,prob.out_inds]
     return x,λ
 end
 ## Compute AS0 

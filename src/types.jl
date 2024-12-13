@@ -30,6 +30,7 @@ struct MPQP
     norm_factors::Vector{Float64}
     eq_ids::Vector{Int64}
     rank_defficiency::Int64
+    out_inds::Vector{Int64}
 end
 
 Base.@kwdef mutable struct Settings 
