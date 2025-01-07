@@ -27,6 +27,11 @@ function mpsolve(mpQP,Θ;opts=nothing, AS0 = nothing) # bounds_table as option
     # Setup parametric problem and normalize
     prob = setup_mpp(mpQP;fix_ids,fix_vals)
     prob, Θ, tf = normalize_parameters(prob,Θ)
+    if(isnothing(prob)) # Θ makes the problem trivially infeasible
+        @warn "The parameter region of interest is empty"
+        F,info = CriticalRegion[], (solve_time = 0, nCR = 0, nLPs = 0, nExplored = 0,status=:EmptyParameterRegion)
+    end
+
 
     if(isnothing(AS0))
         AS0 = compute_AS0(prob,Θ)
@@ -50,7 +55,7 @@ function mpdaqp_explicit(prob,Θ,AS0;opts = Settings())
     if(length(id_cands) < m)
         id_zeros = findall(prob.norm_factors .≤ opts.eps_zero)
         opts.verbose >  0 && @warn "Rows $id_zeros in A are zero → seen as parameter constraints" 
-        if hasproperty(Θ,:Ath)
+        if hasproperty(Θ,:A)
             A = [Θ.A -prob.d[1:end-1,id_zeros]]
             b = [Θ.b; prob.d[end,id_zeros]]
         else
