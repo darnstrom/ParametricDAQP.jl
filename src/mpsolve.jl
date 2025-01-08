@@ -62,6 +62,10 @@ function mpdaqp_explicit(prob,Θ,AS0;opts = Settings())
             A = -prob.d[1:end-1,id_zeros]
             b = prob.d[end,id_zeros]
         end
+        println("A")
+        display(A)
+        println("b")
+        display(b)
         Θ = (A= A, b = b,lb = Θ.lb, ub = Θ.ub) 
     end
 

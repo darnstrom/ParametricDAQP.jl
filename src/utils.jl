@@ -61,6 +61,10 @@ function setup_mpp(mpQP;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
         RinvV = RinvV[:,mpQP.out_inds]
     end
 
+    println("M:")
+    display(M)
+    println("d:")
+    display(d)
     return MPLDP(M*M', M, MRt, RinvV, d, nth, n, bnd_tbl, norm_factors, eq_ids)
 end
 
