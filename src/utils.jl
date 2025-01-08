@@ -48,8 +48,10 @@ function setup_mpp(mpQP;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
         norm_factor = 0
         for i in 1:m
             norm_factor = norm(view(M,i,:),2) 
-            M[i,:]./=norm_factor
-            d[:,i]./=norm_factor
+            if(norm_factor > 0)
+                M[i,:]./=norm_factor
+                d[:,i]./=norm_factor
+            end
             norm_factors[i]= norm_factor
         end
     end
@@ -65,7 +67,7 @@ function setup_mpp(mpQP;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
 end
 
 ## Normalize parameters to -1 ≤ θ ≤ 1
-function normalize_parameters(prob::MPLDP,Θ)
+function normalize_parameters(prob::MPLDP,Θ;eps_zero=1e-12)
     if(isempty(Θ.ub)) # assume already normalized
         return prob,Θ,(center=0,scaling = 1)
     end
@@ -80,8 +82,26 @@ function normalize_parameters(prob::MPLDP,Θ)
 
     Ath = haskey(Θ,:A) ? Θ.A : zeros(nth,0);
     bth = haskey(Θ,:b) ? Θ.b : zeros(0);
-    Θ =(A=norm_factors.*Ath, b = bth-(center'*Ath)[:], # TODO: verify
+
+    # Normalize A to box -1 ≤ θ ≤ 1
+    A = norm_factors.*Ath
+    b = bth-(center'*Ath)[:]
+
+    # Normalize A
+    is_nonzero = falses(length(b))
+    for i in 1:length(b)
+        norm_factor = norm(view(A,:,i),2);
+        if(norm_factor>eps_zero)
+            rdiv!(view(A,:,i),norm_factor)
+            b[i]/=norm_factor
+            is_nonzero[i] = true
+        else
+            (b[i]<-eps_zero) && return nothing,nothing,nothing # trivially infeasible
+        end
+    end
+    Θ =(A=A[:,is_nonzero], b = b[is_nonzero], # TODO: verify
         lb = -ones(nth), ub = ones(nth));
+
     return prob, Θ,(center=center, scaling = 1 ./ norm_factors)
 end
 function normalize_parameters(prob::MPQP,Θ)
