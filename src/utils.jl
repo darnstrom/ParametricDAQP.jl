@@ -48,8 +48,10 @@ function setup_mpp(mpQP;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
         norm_factor = 0
         for i in 1:m
             norm_factor = norm(view(M,i,:),2) 
-            M[i,:]./=norm_factor
-            d[:,i]./=norm_factor
+            if(norm_factor > 0)
+                M[i,:]./=norm_factor
+                d[:,i]./=norm_factor
+            end
             norm_factors[i]= norm_factor
         end
     end
