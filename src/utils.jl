@@ -307,7 +307,7 @@ function compute_AS0(mpLDP::MPLDP,Θ)
     senses = zeros(Cint,size(mpLDP.d,2));
     senses[mpLDP.eq_ids] .= DAQP.EQUALITY
     _,_,exitflag,info= DAQP.quadprog(zeros(0,0),zeros(0),mpLDP.M,mpLDP.d[end,:],Float64[], senses);
-    exitflag == 1 && return findall(abs.(info.λ).> 0)
+    exitflag == 1 && return mpLDP.eq_ids ∪ findall(abs.(info.λ).> 0)
 
     # Solve lifted feasibility problem in (x,θ)-space to find initial point 
     x,_,exitflag,info= DAQP.quadprog(zeros(0,0),zeros(0),[-mpLDP.d[1:end-1,:]' mpLDP.M],mpLDP.d[end,:],Float64[],senses);
@@ -317,7 +317,7 @@ function compute_AS0(mpLDP::MPLDP,Θ)
     end
     θ = x[1:mpLDP.n_theta]
     _,_,exitflag,info= DAQP.quadprog(zeros(0,0),zeros(0),mpLDP.M,mpLDP.d'*[θ;1],Float64[],senses);
-    return findall(abs.(info.λ).> 0)
+    return mpLDP.eq_ids ∪ findall(abs.(info.λ).> 0)
 end
 function compute_AS0(mpQP::MPQP,Θ)
     # Center in box is zero -> dtot = d[end,:]

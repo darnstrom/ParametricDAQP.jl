@@ -125,6 +125,9 @@ function isoptimal(as,ws,prob,opts)
     reset_workspace(ws) 
     # Solve primal+dual feasibility problem 
     normalize_model(ws;eps_zero=opts.eps_zero) || return nothing,false,false;
+    # Make sure that dual variables for equality constraints are free
+    ws.sense[prob.eq_ids .+ ws.m0] .= 4
+
 
     ws.nLPs+=1
     if isfeasible(ws.DAQP_workspace, ws.m, 0)
