@@ -4,7 +4,7 @@
 
 $$
 \begin{align}
-\min_{z} &  ~\frac{1}{2}z^{T}Hz+(f+F \theta)^{T}x \\
+\min_{z} &  ~\frac{1}{2}z^{T}Hz+(f+F \theta)^{T}z \\
 \text{s.t.} & ~A z \leq b + B \theta \\
 & ~\theta \in \Theta
 \end{align}
