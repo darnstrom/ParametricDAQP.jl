@@ -2,7 +2,8 @@ using ParametricDAQP
 using PolyDAQP
 using Test
 using LinearAlgebra
-using DAQP
+using DAQPBase
+const DAQP = DAQPBase
 
 function generate_mpQP(n,m,nth)
     M = randn(n,n)
