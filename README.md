@@ -34,3 +34,18 @@ ub,lb  = 1.5*ones(2), -1.5*ones(2);
 # Solve mpQP over desired region
 sol,info = ParametricDAQP.mpsolve(mpQP,Θ);
 ```
+## Citation
+If you use the package in your work, consider citing the following paper
+
+```
+@inproceedings{arnstrom2024pdaqp,
+  author={Arnström, Daniel and Axehill, Daniel},
+  booktitle={2024 IEEE 63rd Conference on Decision and Control (CDC)}, 
+  title={A High-Performant Multi-Parametric Quadratic Programming Solver}, 
+  year={2024},
+  volume={},
+  number={},
+  pages={303-308},
+}
+```
+
