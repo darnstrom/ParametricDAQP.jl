@@ -8,7 +8,7 @@ end
 
 function isnonempty(A,b;daqp_settings=nothing)
     d = DAQP.Model();
-    DAQP.settings(d,Dict(:fval_bound=>size(A,1)-1,:zero_tol=>1e-7)) # Cannot be outside box
+    DAQP.settings(d,Dict(:fval_bound=>size(A,1)-1,:sing_tol=>1e-7)) # Cannot be outside box
     !isnothing(daqp_settings) && DAQP.settings(d,daqp_settings)
     DAQP.setup(d,zeros(0,0),zeros(0),A,b,A_rowmaj=true);
     x,fval,exitflag,info = DAQP.solve(d);

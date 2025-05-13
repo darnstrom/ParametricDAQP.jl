@@ -46,7 +46,7 @@ Base.@kwdef mutable struct Settings
     factorization::Symbol = :chol
     postcheck_rank::Bool = true
     lowdim_tol::Float64 = 0 
-    daqp_settings = Dict{Symbol,Any}() 
+    daqp_settings = Dict{Symbol,Any}()
 end
 
 Settings(opts::Nothing) = Settings()
