@@ -208,6 +208,7 @@ function setup_workspace(Θ,n_constr;opts=Settings())::Workspace
                        UIntX[], UIntX[], UIntX[], CriticalRegion[],Set{UIntX}(),opts,
                        falses(n_constr),falses(n_constr),0, zeros(n_constr),zeros(0,0));
     DAQP.init_c_workspace_ldp(p,ws.Ath,ws.bth,ws.bth_lower,ws.sense;max_radius)
+    settings(ws.DAQP_workspace,opts.daqp_settings)
     return ws 
 end
 ## convert AS to unsigned int 

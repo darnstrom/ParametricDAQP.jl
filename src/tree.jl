@@ -6,9 +6,10 @@ struct BinarySearchTree
     depth::Int
 end
 
-function isnonempty(A,b)
+function isnonempty(A,b;daqp_settings=nothing)
     d = DAQP.Model();
     DAQP.settings(d,Dict(:fval_bound=>size(A,1)-1,:zero_tol=>1e-7)) # Cannot be outside box
+    !isnothing(daqp_settings) && DAQP.settings(d,daqp_settings)
     DAQP.setup(d,zeros(0,0),zeros(0),A,b,A_rowmaj=true);
     x,fval,exitflag,info = DAQP.solve(d);
     # TODO add guard to do this check
@@ -68,7 +69,7 @@ function get_feedbacks(CRs; tol=1e-6)
 end
 
 # TODO: Can be cut in half by using points in CR 
-function classify_regions(CRs,hps, reg2hp; reg_ids = nothing, hp_ids = nothing, branches = nothing)
+function classify_regions(CRs,hps, reg2hp; reg_ids = nothing, hp_ids = nothing, branches = nothing, daqp_settings=nothing)
     isnothing(reg_ids) && (reg_ids = 1:length(CRs))
     isnothing(hp_ids) && (hp_ids = 1:size(hps,2))
     nth, nh = size(hps,1)-1, length(hp_ids)
@@ -103,21 +104,21 @@ function classify_regions(CRs,hps, reg2hp; reg_ids = nothing, hp_ids = nothing, 
             # Negative
             Ath_test[:,1] = -hps[1:nth,hj]
             bth_test[1] = -hps[end,hj]-1e-12
-            isnonempty(Ath_test,bth_test) && push!(nregs[j],i)
+            isnonempty(Ath_test,bth_test;daqp_settings) && push!(nregs[j],i)
             # Positive
             Ath_test[:,1] = hps[1:nth,hj]
             bth_test[1] = hps[end,hj]-1e-12
-            isnonempty(Ath_test,bth_test) && push!(pregs[j],i)
+            isnonempty(Ath_test,bth_test;daqp_settings) && push!(pregs[j],i)
         end
     end
     return nregs,pregs
 end
 
-function build_tree(sol::Solution)
+function build_tree(sol::Solution; daqp_settings = nothing)
     hps,reg2hp = get_halfplanes(sol.CRs)
     fbs, fb_ids = get_feedbacks(sol.CRs)
     nh = size(hps,2)
-    nregs,pregs = classify_regions(sol.CRs,hps,reg2hp)
+    nregs,pregs = classify_regions(sol.CRs,hps,reg2hp;daqp_settings)
     hp_list, jump_list = Int[0],Int[0]
 
     N0 = (Set{Int}(1:length(sol.CRs)),[],1)
@@ -140,7 +141,7 @@ function build_tree(sol::Solution)
         min_ids = findall(==(min_val),vals)
         hp_ids = hp_ids[min_ids]
         if length(branches) > 0 && min_val > 1# Compute the actual split
-            splits = tuple.(classify_regions(sol.CRs,hps,reg2hp;reg_ids,hp_ids,branches)...)
+            splits = tuple.(classify_regions(sol.CRs,hps,reg2hp;reg_ids,hp_ids,branches,daqp_settings)...)
             vals =[split_objective(s) for s in splits]
             min_val,min_id = findmin(vals)
             hp_id = hp_ids[min_id] # TODO add tie-breaker...

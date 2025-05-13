@@ -46,6 +46,7 @@ Base.@kwdef mutable struct Settings
     factorization::Symbol = :chol
     postcheck_rank::Bool = true
     lowdim_tol::Float64 = 0 
+    daqp_settings = Dict{Symbol,Any}() 
 end
 
 Settings(opts::Nothing) = Settings()
@@ -69,7 +70,7 @@ mutable struct Workspace{T<:Integer}
     sense::Vector{Cint}
     m::Int64
     m0::Int64 
-    DAQP_workspace::Ptr{Cvoid}
+    DAQP_workspace::Ptr{DAQPBase.Workspace}
     ASs::BitMatrix
     nLPs::Int64
     S::Vector{T}
