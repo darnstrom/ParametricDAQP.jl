@@ -252,10 +252,9 @@ function extract_CR(ws,prob)
         ccall((:deactivate_constraints,DAQP.libdaqp),Cvoid,(Ptr{Cvoid},),ws.DAQP_workspace);
         ccall((:reset_daqp_workspace,DAQP.libdaqp),Cvoid,(Ptr{Cvoid},),ws.DAQP_workspace);
         ws.bth[1:ws.m].-=rhs_offset; # Shrink region 
-        if !isfeasible(ws.DAQP_workspace, ws.m, 0) # Check if region is narrow and, hence, should be removed
-            return nothing
-        end
-        ws.bth[1:ws.m].+=rhs_offset; # Restore 
+        is_feasible = isfeasible(ws.DAQP_workspace, ws.m, 0)
+        ws.bth[1:ws.m].+=rhs_offset; # Restore rhs
+        !is_feasible &&  return nothing
     end
 
     AS = ws.opts.store_AS || ws.opts.store_regions ? findall(ws.AS) : Int64[]
