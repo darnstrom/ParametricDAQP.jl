@@ -45,7 +45,7 @@ Base.@kwdef mutable struct Settings
     chunk_size::Int64 = 1e3 
     factorization::Symbol = :chol
     postcheck_rank::Bool = true
-    lowdim_tol::Float64 = 0 
+    lowdim_tol::Float64 = 1e-12
     daqp_settings = Dict{Symbol,Any}()
 end
 
