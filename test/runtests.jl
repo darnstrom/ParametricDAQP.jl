@@ -113,13 +113,13 @@ end
             A=A,b=b,B=B)
     Θ = (ub=1.5*ones(nth),lb=-1.5*ones(nth)) 
 
-    opts = Dict("store_points"=>true, "verbose"=>1)
+    opts = Dict("store_points"=>true, "verbose"=>1, "lowdim_tol" => 0)
     sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
     @test length(sol.CRs) == 27
     # Remove lower dimensional regions
-    opts = Dict("store_points"=>true, "verbose"=>1, "lowdim_tol"=>1e-12)
+    opts = Dict("store_points"=>true, "verbose"=>1, "lowdim_tol"=>1e-9)
     sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
-    @test length(sol.CRs) < 27
+    @test length(sol.CRs) == 12
 end
 
 
