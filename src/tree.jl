@@ -8,7 +8,7 @@ end
 
 function isnonempty(A,b;daqp_settings=nothing)
     d = DAQP.Model();
-    DAQP.settings(d,Dict(:fval_bound=>size(A,1)-1,:sing_tol=>1e-7)) # Cannot be outside box
+    DAQP.settings(d,Dict(:fval_bound=>size(A,1)-1,:sing_tol=>1e-9)) # Cannot be outside box
     !isnothing(daqp_settings) && DAQP.settings(d,daqp_settings)
     DAQP.setup(d,zeros(0,0),zeros(0),A,b,A_rowmaj=true);
     x,fval,exitflag,info = DAQP.solve(d);
@@ -27,12 +27,14 @@ function get_halfplanes(CRs)
         for (i,a) = enumerate(eachcol(cr.Ath))
             # Disregard box bounds
             cr.bth[i] == 1 && sum(!=(0),a) == 1 && continue
-            asign = sign(a[findfirst(!=(0),a)])
+            nz_id = findfirst(!=(0),a)
+            isnothing(nz_id) && continue
+            asign = sign(a[nz_id])
             hcand = asign*[a;cr.bth[i]]
             # Check if hcand already exists in hps
             new_hp = true
             for (j,h) in  enumerate(eachcol(hps))
-                if(all(isapprox.(hcand,h,atol=1e-6)))
+                if(all(isapprox.(hcand,h,atol=1e-5,rtol=1e-5)))
                     push!(reg2hp[reg_id],(j,asign))
                     new_hp = false
                     break;
@@ -47,14 +49,14 @@ function get_halfplanes(CRs)
     return hps,reg2hp
 end
 
-function get_feedbacks(CRs; tol=1e-6)
+function get_feedbacks(CRs; tol=1e-5)
     isempty(CRs) && return nothing
     nth = size(CRs[1].Ath,1)
     Z,ids = [], []
     for cr in CRs 
         id = 0 
         for (i,z) in enumerate(Z)
-            if norm(cr.z-z) < tol
+            if all(isapprox.(cr.z,z,atol=tol, rtol=tol))
                 id = i
                 push!(ids,id)
                 break
@@ -103,18 +105,19 @@ function classify_regions(CRs,hps, reg2hp; reg_ids = nothing, hp_ids = nothing, 
 
             # Negative
             Ath_test[:,1] = -hps[1:nth,hj]
-            bth_test[1] = -hps[end,hj]-1e-12
+            bth_test[1] = -hps[end,hj]-1e-6
             isnonempty(Ath_test,bth_test;daqp_settings) && push!(nregs[j],i)
             # Positive
             Ath_test[:,1] = hps[1:nth,hj]
-            bth_test[1] = hps[end,hj]-1e-12
+            bth_test[1] = hps[end,hj]-1e-6
             isnonempty(Ath_test,bth_test;daqp_settings) && push!(pregs[j],i)
         end
     end
     return nregs,pregs
 end
 
-function build_tree(sol::Solution; daqp_settings = nothing)
+function build_tree(sol::Solution; daqp_settings = nothing, verbose=1)
+    verbose > 0 && @info "Building binary search tree" 
     hps,reg2hp = get_halfplanes(sol.CRs)
     fbs, fb_ids = get_feedbacks(sol.CRs)
     nh = size(hps,2)
