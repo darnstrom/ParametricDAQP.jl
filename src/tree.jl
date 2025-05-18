@@ -146,9 +146,14 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1)
         if length(branches) > 0 && min_val > 1# Compute the actual split
             splits = tuple.(classify_regions(sol.CRs,hps,reg2hp;reg_ids,hp_ids,branches,daqp_settings)...)
             vals =[split_objective(s) for s in splits]
-            min_val,min_id = findmin(vals)
-            hp_id = hp_ids[min_id] # TODO add tie-breaker...
-            new_nregs,new_pregs = splits[min_id]
+            min_val = minimum(vals)
+            min_ids = findall(==(min_val),vals)
+            # Among the minimum values, do new split to maximum regions that split
+            vals =[max(length.(s)...) for s in splits[min_ids]]
+            min_val_second,min_id = findmin(vals)
+
+            hp_id = hp_ids[min_ids[min_id]] # TODO add tie-breaker...
+            new_nregs,new_pregs = splits[min_ids[min_id]]
         else
             hp_id = hp_ids[1] 
             new_nregs, new_pregs = splits[min_ids[1]]
@@ -166,7 +171,7 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1)
         fb_cands = get_fbid(new_nregs) 
 
         if length(fb_cands) == 0
-            @warn "Empty region -> Defaulting to leaf node" min_val new_nregs new_pregs reg_ids
+            @warn "Empty region -> Defaulting to leaf node" min_val new_nregs new_pregs reg_ids branches
             jump_list[next_id] = 1 # pointing at root node -> leaf
             reg_cands = setdiff(reg_ids,new_pregs)
             # Try to pick region that "disappeared", otherwise pick first region in parent
@@ -181,7 +186,7 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1)
 
         fb_cands = get_fbid(new_pregs)
         if length(fb_cands) == 0
-            @warn "Empty region -> Defaulting to leaf node" min_val new_nregs new_pregs reg_ids
+            @warn "Empty region -> Defaulting to leaf node" min_val new_nregs new_pregs reg_ids branches
             jump_list[next_id+1] = 1 # pointing at root node -> leaf
             reg_cands = setdiff(reg_ids,new_nregs)
             # Try to pick region that "disappeared", otherwise pick first region in parent
