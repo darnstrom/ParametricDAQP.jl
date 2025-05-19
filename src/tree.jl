@@ -161,7 +161,7 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1)
 
         next_id = length(hp_list)+1
         hp_list[self_id] = hp_id
-        jump_list[self_id] = next_id
+        jump_list[self_id] = next_id-self_id
         
         # Make room for the two new nodes that are spawned 
         push!(hp_list,0,0)
@@ -172,7 +172,7 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1)
 
         if length(fb_cands) == 0
             @warn "Empty region -> Defaulting to leaf node" min_val new_nregs new_pregs reg_ids branches
-            jump_list[next_id] = 1 # pointing at root node -> leaf
+            jump_list[next_id] = 0 # pointing at root node -> leaf
             reg_cands = setdiff(reg_ids,new_pregs)
             # Try to pick region that "disappeared", otherwise pick first region in parent
             reg_id  = isempty(fb_cands) ? first(reg_ids) : first(reg_cands)
@@ -180,14 +180,14 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1)
         elseif length(fb_cands) > 1
             push!(U,(new_nregs,branches ∪ [(hp_id,-1)], next_id))
         else
-            jump_list[next_id] = 1 # pointing at root node -> leaf
+            jump_list[next_id] = 0 # pointing at root node -> leaf
             hp_list[next_id] = first(fb_cands) 
         end
 
         fb_cands = get_fbid(new_pregs)
         if length(fb_cands) == 0
             @warn "Empty region -> Defaulting to leaf node" min_val new_nregs new_pregs reg_ids branches
-            jump_list[next_id+1] = 1 # pointing at root node -> leaf
+            jump_list[next_id+1] = 0 # pointing at root node -> leaf
             reg_cands = setdiff(reg_ids,new_nregs)
             # Try to pick region that "disappeared", otherwise pick first region in parent
             reg_id  = isempty(fb_cands) ? first(reg_ids) : first(reg_cands)
@@ -195,7 +195,7 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1)
         elseif length(fb_cands) > 1
             push!(U,(new_pregs,branches ∪ [(hp_id,1)], next_id+1))
         else
-            jump_list[next_id+1] = 1 # pointing at root node -> leaf
+            jump_list[next_id+1] = 0 # pointing at root node -> leaf
             hp_list[next_id+1] = first(fb_cands)
         end
     end
@@ -205,7 +205,7 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1)
     new_hps = hps[:,new_hp_ids]
 
     new_hp_list = copy(hp_list)
-    hp_rows = findall(jump_list.!== 1)
+    hp_rows = findall(jump_list.!== 0)
     for i in hp_rows
         new_hp_list[i] = hp_old2new[new_hp_list[i]]
     end
@@ -218,15 +218,15 @@ end
 
 function evaluate(bst::BinarySearchTree,θ)
     id =  1 # start in root note
-    next_id = bst.jump_list[id]
-    while next_id != 1
+    next_id = id+bst.jump_list[id]
+    while next_id != id 
         hid = bst.hp_list[id]  
         if bst.halfplanes[1:end-1,hid]'*θ  ≤ bst.halfplanes[end,hid] 
             id = next_id+1 
         else
             id = next_id
         end
-        next_id = bst.jump_list[id]
+        next_id = id+bst.jump_list[id]
     end
     fid = bst.hp_list[id]  
     return bst.feedbacks[fid]'*[θ;1]

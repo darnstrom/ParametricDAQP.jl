@@ -40,7 +40,7 @@ function codegen(bst::BinarySearchTree; dir="codegen",fname="pdaqp", float_type=
     write_array(fsrc,feedbacks,fname*"_feedbacks","c_float")
     # -1 to indices since 0 index C is 1 index Julia
     write_array(fsrc,bst.hp_list.-1,fname*"_hp_list","c_int")
-    write_array(fsrc,bst.jump_list.-1,fname*"_jump_list","c_int") 
+    write_array(fsrc,bst.jump_list,fname*"_jump_list","c_int") 
 
     write(fsrc, """
 void $(fname)_evaluate(c_float* parameter, c_float* solution){
@@ -48,8 +48,8 @@ void $(fname)_evaluate(c_float* parameter, c_float* solution){
     int id,next_id;
     c_float val;
     id = 0;
-    next_id = $(fname)_jump_list[id];
-    while(next_id != 0){
+    next_id = id+$(fname)_jump_list[id];
+    while(next_id != id){
         // Compute halfplane value 
         disp = $(fname)_hp_list[id]*($(uppercase(fname))_N_PARAMETER+1);
         for(i=0, val=0; i<$(uppercase(fname))_N_PARAMETER; i++)
@@ -58,7 +58,7 @@ void $(fname)_evaluate(c_float* parameter, c_float* solution){
             id = next_id+1;
         else // negative branch
             id = next_id;
-        next_id = $(fname)_jump_list[id];
+        next_id = id+$(fname)_jump_list[id];
     }
     // Leaf node reached -> evaluate affine function
     disp = $(fname)_hp_list[id]*($(uppercase(fname))_N_PARAMETER+1)*$(uppercase(fname))_N_SOLUTION;
