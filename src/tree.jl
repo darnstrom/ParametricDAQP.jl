@@ -168,44 +168,29 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1)
         push!(jump_list,0,0) 
 
         # Spawn new nodes
-        fb_cands = get_fbid(new_nregs) 
-
-        if length(fb_cands) == 0
-            @warn "Empty region -> Defaulting to leaf node" min_val new_nregs new_pregs reg_ids branches
-            jump_list[next_id] = 0 # pointing at root node -> leaf
-            reg_cands = setdiff(reg_ids,new_pregs)
-            # Try to pick region that "disappeared", otherwise pick first region in parent
-            reg_id  = isempty(fb_cands) ? first(reg_ids) : first(reg_cands)
-            hp_list[next_id] = fb_ids[reg_id]
-        elseif length(fb_cands) > 1
-            push!(U,(new_nregs,branches ∪ [(hp_id,-1)], next_id))
-        else
-            jump_list[next_id] = 0 # pointing at root node -> leaf
-            hp_list[next_id] = first(fb_cands) 
-        end
-
-        fb_cands = get_fbid(new_pregs)
-        if length(fb_cands) == 0
-            @warn "Empty region -> Defaulting to leaf node" min_val new_nregs new_pregs reg_ids branches
-            jump_list[next_id+1] = 0 # pointing at root node -> leaf
-            reg_cands = setdiff(reg_ids,new_nregs)
-            # Try to pick region that "disappeared", otherwise pick first region in parent
-            reg_id  = isempty(fb_cands) ? first(reg_ids) : first(reg_cands)
-            hp_list[next_id+1] = fb_ids[reg_id]
-        elseif length(fb_cands) > 1
-            push!(U,(new_pregs,branches ∪ [(hp_id,1)], next_id+1))
-        else
-            jump_list[next_id+1] = 0 # pointing at root node -> leaf
-            hp_list[next_id+1] = first(fb_cands)
+        for (new_regs,new_regs_comp,next, hp_sign) in [(new_nregs,new_pregs,next_id,-1), (new_pregs,new_nregs,next_id+1,1)]
+            fb_cands = get_fbid(new_regs)
+            if length(fb_cands) == 0
+                @warn "Empty region -> Defaulting to leaf node" min_val new_nregs new_pregs reg_ids branches
+                jump_list[next] = 0 # pointing at root node -> leaf
+                # Try to pick region that "disappeared", otherwise pick first region in parent
+                reg_id  = isempty(fb_cands) ? first(reg_ids) : first(setdiff(reg_ids,new_regs_comp))
+                hp_list[next] = fb_ids[reg_id]
+            elseif length(fb_cands) > 1
+                push!(U,(new_regs,branches ∪ [(hp_id,hp_sign)], next))
+            else
+                jump_list[next] = 0 # pointing at root node -> leaf
+                hp_list[next] = first(fb_cands)
+            end
         end
     end
     # Remove superfluous HPs
-    new_hp_ids = sort(unique(hp_list))
+    hp_rows = findall(jump_list.!== 0)
+    new_hp_ids = sort(unique(hp_list[hp_rows]))
     hp_old2new = Dict(id => k for (k,id) in enumerate(new_hp_ids))
     new_hps = hps[:,new_hp_ids]
 
     new_hp_list = copy(hp_list)
-    hp_rows = findall(jump_list.!== 0)
     for i in hp_rows
         new_hp_list[i] = hp_old2new[new_hp_list[i]]
     end
