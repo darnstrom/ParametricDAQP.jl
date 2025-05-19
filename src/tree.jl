@@ -199,10 +199,21 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1)
             hp_list[next_id+1] = first(fb_cands)
         end
     end
+    # Remove superfluous HPs
+    new_hp_ids = sort(unique(hp_list))
+    hp_old2new = Dict(id => k for (k,id) in enumerate(new_hp_ids))
+    new_hps = hps[:,new_hp_ids]
+
+    new_hp_list = copy(hp_list)
+    hp_rows = findall(jump_list.!== 1)
+    for i in hp_rows
+        new_hp_list[i] = hp_old2new[new_hp_list[i]]
+    end
+
     # Denormalize 
-    hps = denormalize(hps,sol.scaling,sol.translation;hps=true)
+    hps = denormalize(new_hps,sol.scaling,sol.translation;hps=true)
     fbs = [denormalize(f,sol.scaling,sol.translation) for f in fbs]
-    return BinarySearchTree(hps,fbs,hp_list,jump_list,depth)
+    return BinarySearchTree(hps,fbs,new_hp_list,jump_list,depth)
 end
 
 function evaluate(bst::BinarySearchTree,θ)
