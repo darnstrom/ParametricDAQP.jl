@@ -42,6 +42,7 @@ Base.@kwdef mutable struct Settings
     store_dual::Bool = false
     remove_redundant::Bool = true
     time_limit::Int64 = 1e5
+    region_limit::Int64 = 1e12
     chunk_size::Int64 = 1e3 
     factorization::Symbol = :chol
     postcheck_rank::Bool = true

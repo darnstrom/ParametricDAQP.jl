@@ -317,3 +317,29 @@ end
     opts.lowdim_tol = 1e-9
     sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
 end
+
+# Test settings
+@testset "Basic SISO Example from Bemporad et al. 2002" begin
+    # Setup mpQP
+    H =  [1.5064 0.4838; 0.4838 1.5258];
+    f = zeros(2,1)
+    F = [9.6652 5.2115; 7.0732 -7.0879];
+    A = [1.0 0; -1 0; 0 1; 0 -1];
+    B = zeros(4,2);
+    b = 2*ones(4);
+    mpQP = (H=H,f=f,F=F,A=A,b=b,B=B)
+
+    # Setup parameter region of interest
+    ub,lb  = 1.5*ones(2), -1.5*ones(2)
+    Θ = (ub=ub,lb=lb)
+
+    # Solve mpQP over desired region
+    opts = ParametricDAQP.Settings()
+    opts.region_limit = 1;
+    sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
+    @test sol.status == :RegionLimitReached
+    opts.region_limit = 1e12;
+    opts.time_limit = 0;
+    sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
+    @test sol.status == :TimeLimitReached
+end

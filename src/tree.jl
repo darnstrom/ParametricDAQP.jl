@@ -117,6 +117,7 @@ function classify_regions(CRs,hps, reg2hp; reg_ids = nothing, hp_ids = nothing, 
 end
 
 function build_tree(sol::Solution; daqp_settings = nothing, verbose=1)
+    sol.status != :Solved && throw("PDAQP failed to compute explicit solution (exit flag: $(sol.status)). Building binary search tree aborted.")
     verbose > 0 && @info "Building binary search tree" 
     hps,reg2hp = get_halfplanes(sol.CRs)
     fbs, fb_ids = get_feedbacks(sol.CRs)

@@ -83,6 +83,10 @@ function mpdaqp_explicit(prob,Θ,AS0;opts = Settings())
             status = :TimeLimitReached
             break
         end
+        if(length(ws.F) > opts.region_limit)
+            status = :RegionLimitReached
+            break
+        end
 
         while(length(ws.S) < opts.chunk_size && !isempty(ws.Sdown)) # First try to move down...
             explore_supersets(pop!(ws.Sdown),ws,id_cands,ws.S,prob.bounds_table)
