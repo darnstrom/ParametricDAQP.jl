@@ -1,7 +1,7 @@
 name = "ParametricDAQP"
 uuid = "19f72acb-e2a9-45c8-96b9-4d5487c8db2e"
 authors = ["Daniel Arnström <daniel.arnstrom@gmail.com>"]
-version = "0.3.0"
+version = "0.3.1"
 
 [deps]
 DAQPBase = "833476c3-a8c0-4073-9b64-6473509843fe"
