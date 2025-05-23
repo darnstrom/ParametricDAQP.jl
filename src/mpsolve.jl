@@ -6,7 +6,7 @@ function mpsolve(mpQP,Θ;opts=nothing, AS0 = nothing) # bounds_table as option
     Δb = Θ.ub-Θ.lb 
     if any(Δb .< -opts.eps_zero) 
         opts.verbose > 0 && @error "Θ is empty"
-        return nothing,nothing
+        return nothing,:EmptyParameterRegion
     end
 
 

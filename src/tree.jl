@@ -116,11 +116,23 @@ function classify_regions(CRs,hps, reg2hp; reg_ids = nothing, hp_ids = nothing, 
     return nregs,pregs
 end
 
-function build_tree(sol::Solution; daqp_settings = nothing, verbose=1)
-    sol.status != :Solved && throw("PDAQP failed to compute explicit solution (exit flag: $(sol.status)). Building binary search tree aborted.")
+function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals=1e12)
+    if sol.status != :Solved
+        verbose > 0 && @warn "Cannot build binary search tree. Solution status: $(sol.status)"
+        return nothing
+    end
+    sol.status != :Solved && return nothing
     verbose > 0 && @info "Building binary search tree" 
     hps,reg2hp = get_halfplanes(sol.CRs)
     fbs, fb_ids = get_feedbacks(sol.CRs)
+
+    # Approximate number of real numbers
+    n_reals = length(hps) + length(fbs)*length(fbs[1])
+    if n_reals > max_reals
+        verbose > 0 && @warn "Memory limit for real numbers (n_reals = $n_reals, max_reals = $max_reals) reached"
+        return nothing
+    end
+
     nh = size(hps,2)
     nregs,pregs = classify_regions(sol.CRs,hps,reg2hp;daqp_settings)
     hp_list, jump_list = Int[0],Int[0]

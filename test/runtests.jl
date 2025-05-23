@@ -247,7 +247,6 @@ end
     end
 end
 
-## Test  
 @testset "Primal degenerate LP" begin
     H =  zeros(4,4);
     f = [1.0;1.0;0;0] 
@@ -342,4 +341,14 @@ end
     opts.time_limit = 0;
     sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
     @test sol.status == :TimeLimitReached
+    opts.region_limit = 1e12;
+    opts.time_limit = 1e12;
+    sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
+    @test sol.status == :Solved
+
+    status = ParametricDAQP.codegen(sol; dir=tempname())
+    @test status > 0
+    status = ParametricDAQP.codegen(sol; dir=tempname(),max_reals = 1)
+    @test status < 0
+
 end

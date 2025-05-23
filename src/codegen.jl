@@ -7,9 +7,11 @@ function write_array(f,A,name,type)
     write(f,"};\n")
 end
 
-function codegen(sol::Solution;dir="codegen",fname="pdaqp", float_type="float", int_type="unsigned short")
-    bst = build_tree(sol);
+function codegen(sol::Solution;dir="codegen",fname="pdaqp", float_type="float", int_type="unsigned short", max_reals=1e12)
+    bst = build_tree(sol;max_reals);
+    isnothing(bst) && return -1
     codegen(bst;dir,fname,float_type,int_type)
+    return 1
 end
 
 function codegen(bst::BinarySearchTree; dir="codegen",fname="pdaqp", float_type="float", int_type="unsigned short")
