@@ -7,9 +7,9 @@ export MPLDP
 include("types.jl")
 include("utils.jl")
 include("mpsolve.jl")
-include("io.jl")
 include("plot.jl")
 include("tree.jl")
 include("codegen.jl")
+include("io.jl")
 
 end # module ParametricDAQP
