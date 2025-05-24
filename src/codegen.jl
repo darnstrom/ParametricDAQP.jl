@@ -65,10 +65,7 @@ function codegen(bst::BinarySearchTree; dir="codegen",fname="pdaqp", float_type=
             disp = $(fname)_hp_list[id]*($(uppercase(fname))_N_PARAMETER+1);
             for(i=0, val=0; i<$(uppercase(fname))_N_PARAMETER; i++)
                 val += parameter[i] * $(fname)_halfplanes[disp++];
-            if(val <= $(fname)_halfplanes[disp])// positive branch
-                id = next_id+1;
-            else // negative branch
-                id = next_id;
+            id = next_id + (val <= $(fname)_halfplanes[disp]);
             next_id = id+$(fname)_jump_list[id];
         }
         // Leaf node reached -> evaluate affine function
