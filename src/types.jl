@@ -88,6 +88,7 @@ mutable struct Workspace{T<:Integer}
 end
 
 struct Solution
+    problem::Union{MPLDP,MPQP}
     CRs::Vector{CriticalRegion}
     scaling::Vector{Float64} 
     translation::Vector{Float64}
