@@ -41,7 +41,7 @@ function mpsolve(mpQP,Θ;opts=nothing, AS0 = nothing) # bounds_table as option
     else
         F,info = mpdaqp_explicit(prob,Θ,AS0;opts)
     end
-    return Solution(F,tf.scaling,tf.center,opts,info.status), info
+    return Solution(prob,F,tf.scaling,tf.center,opts,info.status), info
 end
 ## Method based on combinatorial adjacency 
 function mpdaqp_explicit(prob,Θ,AS0;opts = Settings())

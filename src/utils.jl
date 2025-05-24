@@ -289,15 +289,20 @@ function extract_solution(AS,prob::MPLDP,ws)
     x = copy(prob.RinvV); mul!(x,λ,prob.MRt[ws.AS,:],1,1)
 
     # Renormalize dual variable from LDP transform
-    if ws.opts.store_dual & ws.opts.store_AS
+    if ws.opts.store_dual && ws.opts.store_AS
         for (i,ASi) in enumerate(AS)
             rdiv!(view(λ,:,i),-prob.norm_factors[ASi])
         end
     end
+    λ = ws.opts.store_dual ? λ : zeros(0,0)
     return x,λ
 end
 function extract_solution(AS,prob::MPQP,ws)
-    λ = [ws.Ath[:,ws.m0+1:ws.m0+ws.nAS];-ws.bth[ws.m0+1:ws.m0+ws.nAS]']
+    if ws.opts.store_dual
+        λ = [ws.Ath[:,ws.m0+1:ws.m0+ws.nAS];-ws.bth[ws.m0+1:ws.m0+ws.nAS]']
+    else
+        λ = zeros(0,0)
+    end
     x = ws.x[:,prob.out_inds]
     return x,λ
 end

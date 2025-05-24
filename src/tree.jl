@@ -4,6 +4,7 @@ struct BinarySearchTree
     hp_list::Vector{Int}
     jump_list::Vector{Int}
     depth::Int
+    duals::Vector{Matrix{Float64}}
 end
 
 function isnonempty(A,b;daqp_settings=nothing)
@@ -116,7 +117,7 @@ function classify_regions(CRs,hps, reg2hp; reg_ids = nothing, hp_ids = nothing, 
     return nregs,pregs
 end
 
-function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals=1e12)
+function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals=1e12, dual=false)
     if sol.status != :Solved
         verbose > 0 && @warn "Cannot build binary search tree. Solution status: $(sol.status)"
         return nothing
@@ -128,6 +129,7 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
 
     # Approximate number of real numbers
     n_reals = length(hps) + length(fbs)*length(fbs[1])
+    dual && (n_reals += length(sol.CRs)*(sol.problem.n_theta+1)*length(sol.problem.norm_factors))
     if n_reals > max_reals
         verbose > 0 && @warn "Memory limit for real numbers (n_reals = $n_reals, max_reals = $max_reals) reached"
         return nothing
@@ -140,11 +142,11 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
     N0 = (Set{Int}(1:length(sol.CRs)),[],1)
     U = [N0]
     get_fbid = s->Set{Int}(fb_ids[collect(s)])
-    split_objective = x-> max(length.(get_fbid.(x))...)
+    split_objective = dual ? x->max(length.(x)...) : x-> max(length.(get_fbid.(x))...)
 
     depth = 0
     while !isempty(U)
-        reg_ids, branches, self_id = pop!(U) 
+        reg_ids, branches, self_id = pop!(U)
         depth = max(depth,length(branches))
 
         hp_ids = reduce(∪,Set(first.(reg2hp[i])) for i in reg_ids);
@@ -162,10 +164,18 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
             min_val = minimum(vals)
             min_ids = findall(==(min_val),vals)
             # Among the minimum values, do new split to maximum regions that split
-            vals =[max(length.(s)...) for s in splits[min_ids]]
-            min_val_second,min_id = findmin(vals)
+            if(!dual)
+                vals =[max(length.(s)...) for s in splits[min_ids]]
+                min_val_second,min_id = findmin(vals)
 
-            hp_id = hp_ids[min_ids[min_id]] # TODO add tie-breaker...
+                min_ids = min_ids[findall(==(min_val_second),vals)]
+                vals =[min(length.(get_fbid.(s))...) for s in splits[min_ids]]
+                min_val_third,min_id = findmin(vals)
+            else
+                min_id = 1; # Pick first
+            end
+
+            hp_id = hp_ids[min_ids[min_id]]
             new_nregs,new_pregs = splits[min_ids[min_id]]
         else
             hp_id = hp_ids[1] 
@@ -211,7 +221,18 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
     # Denormalize 
     hps = denormalize(new_hps,sol.scaling,sol.translation;hps=true)
     fbs = [denormalize(f,sol.scaling,sol.translation) for f in fbs]
-    return BinarySearchTree(hps,fbs,new_hp_list,jump_list,depth)
+
+    fbs_dual = Matrix{Float64}[]
+    if dual # XXX would prefer sparse representation, but makes C-code a lot messier...
+        for cr in sol.CRs
+            lam = zeros(size(cr.lam,1),length(sol.problem.norm_factors))
+            lam[:,cr.AS] = cr.lam
+            push!(fbs_dual,lam)
+        end
+        fbs_dual = [denormalize(f,sol.scaling,sol.translation) for f in fbs_dual]
+    end
+
+    return BinarySearchTree(hps,fbs,new_hp_list,jump_list,depth, fbs_dual)
 end
 
 function evaluate(bst::BinarySearchTree,θ)

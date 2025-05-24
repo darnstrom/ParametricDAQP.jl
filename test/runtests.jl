@@ -4,6 +4,7 @@ using Test
 using LinearAlgebra
 using DAQPBase
 const DAQP = DAQPBase
+global templib
 
 function generate_mpQP(n,m,nth)
     M = randn(n,n)
@@ -318,7 +319,7 @@ end
 end
 
 # Test settings
-@testset "Basic SISO Example from Bemporad et al. 2002" begin
+@testset "Settings" begin
     # Setup mpQP
     H =  [1.5064 0.4838; 0.4838 1.5258];
     f = zeros(2,1)
@@ -350,5 +351,54 @@ end
     @test status > 0
     status = ParametricDAQP.codegen(sol; dir=tempname(),max_reals = 1)
     @test status < 0
+end
 
+
+# Test settings
+@testset "C-generated BST" begin
+    # Setup mpQP
+    H =  [1.5064 0.4838; 0.4838 1.5258];
+    f = zeros(2,1)
+    F = [9.6652 5.2115; 7.0732 -7.0879];
+    A = [1.0 0; -1 0; 0 1; 0 -1];
+    B = zeros(4,2);
+    b = 2*ones(4);
+    mpQP = (H=H,f=f,F=F,A=A,b=b,B=B)
+
+    # Get a reference point
+    θ = [-0.75;0.5]
+    f = mpQP.f[:,1]+mpQP.F*θ
+    b = mpQP.b[:,1]+mpQP.B*θ
+    zref,~,~,info= DAQP.quadprog(mpQP.H,f,mpQP.A,b,-1e30*ones(4),zeros(Cint,4));
+    λref = info.λ
+
+    # Setup parameter region of interest
+    ub,lb  = 1.5*ones(2), -1.5*ones(2)
+    Θ = (ub=ub,lb=lb)
+
+    opts = ParametricDAQP.Settings()
+    opts.store_dual=true
+    sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
+
+    srcdir = tempname()
+    status = ParametricDAQP.codegen(sol; dir=srcdir)
+    if(!isnothing(Sys.which("gcc")))
+        testlib = "tree_test."* Base.Libc.Libdl.dlext
+        run(Cmd(`gcc -lm -fPIC -O3 -msse3 -xc -shared -o $testlib pdaqp.c`; dir=srcdir))
+        z = zeros(Cfloat,2)
+        global templib = joinpath(srcdir,testlib)
+        ccall(("pdaqp_evaluate", templib), Cvoid, (Ptr{Cfloat}, Ptr{Cfloat}), Cfloat.(θ),z)
+        @test norm(z - zref)/norm(z) < 1e-6
+    end
+    srcdir = tempname()
+    status = ParametricDAQP.codegen(sol; dir=srcdir,dual=true)
+    if(!isnothing(Sys.which("gcc")))
+        testlib = "tree_test."* Base.Libc.Libdl.dlext
+        run(Cmd(`gcc -lm -fPIC -O3 -msse3 -xc -shared -o $testlib "pdaqp.c"`; dir=srcdir))
+        z, λ = zeros(Cfloat, 2), zeros(Cfloat, 4)
+        global templib = joinpath(srcdir,testlib)
+        ccall(("pdaqp_evaluate", templib), Cvoid, (Ptr{Cfloat}, Ptr{Cfloat}, Ptr{Cfloat}), Cfloat.(θ),z,λ)
+        @test norm(z - zref)/norm(z) < 1e-6
+        @test norm(λ - λref)/norm(λ) < 1e-6
+    end
 end
