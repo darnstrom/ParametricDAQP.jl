@@ -7,16 +7,6 @@ struct BinarySearchTree
     duals::Vector{Matrix{Float64}}
 end
 
-function isnonempty(A,b;daqp_settings=nothing)
-    d = DAQP.Model();
-    DAQP.settings(d,Dict(:fval_bound=>size(A,1)-1,:sing_tol=>1e-9)) # Cannot be outside box
-    !isnothing(daqp_settings) && DAQP.settings(d,daqp_settings)
-    DAQP.setup(d,zeros(0,0),zeros(0),A,b,A_rowmaj=true);
-    x,fval,exitflag,info = DAQP.solve(d);
-    # TODO add guard to do this check
-    return exitflag == 1
-end
-
 function get_halfplanes(CRs)
     nreg = length(CRs)
     nreg == 0 && return nothing
@@ -72,7 +62,7 @@ function get_feedbacks(CRs; tol=1e-5)
 end
 
 # TODO: Can be cut in half by using points in CR 
-function classify_regions(CRs,hps, reg2hp; reg_ids = nothing, hp_ids = nothing, branches = nothing, daqp_settings=nothing)
+function classify_regions(CRs,hps, reg2hp, ws; reg_ids = nothing, hp_ids = nothing, branches = nothing)
     isnothing(reg_ids) && (reg_ids = 1:length(CRs))
     isnothing(hp_ids) && (hp_ids = 1:size(hps,2))
     nth, nh = size(hps,1)-1, length(hp_ids)
@@ -81,17 +71,20 @@ function classify_regions(CRs,hps, reg2hp; reg_ids = nothing, hp_ids = nothing, 
     pregs = [Set{Int}() for _ in 1:nh]
 
 
-    Ath0,bth0 = zeros(nth,1),zeros(1)
+    nbr = isnothing(branches) ? 0 : length(branches)
     if !isnothing(branches)
-        for (hid, hsign) in branches
-            Ath0 = [Ath0 hsign*hps[1:nth,hid]]
-            bth0 = [bth0; hsign*hps[end,hid]]
+        for i = 1:nbr
+            (hid,hsign) = branches[i]
+            ws.A[:,1+i] = hsign*hps[1:nth,hid]
+            ws.b[1+i] = hsign*hps[end,hid]-1e-6
         end
     end
 
     for i in reg_ids 
-        Ath_test = [Ath0 CRs[i].Ath]
-        bth_test = [bth0;CRs[i].bth].-1e-6
+        mi = length(CRs[i].bth)
+        ws.A[:,1+nbr+1:1+nbr+mi] = CRs[i].Ath
+        ws.b[1+nbr+1:1+nbr+mi] = CRs[i].bth .-1e-6
+
         for (j,hj) in enumerate(hp_ids)
             # First check if the hp is a facet of the region
             id = findfirst(x->first(x)==hj,reg2hp[i])
@@ -105,13 +98,14 @@ function classify_regions(CRs,hps, reg2hp; reg_ids = nothing, hp_ids = nothing, 
             end
 
             # Negative
-            Ath_test[:,1] = -hps[1:nth,hj]
-            bth_test[1] = -hps[end,hj]-1e-6
-            isnonempty(Ath_test,bth_test;daqp_settings) && push!(nregs[j],i)
+            ws.A[:,1] = -hps[1:nth,hj]
+            ws.b[1] = -hps[end,hj]-1e-6
+            isfeasible(ws.p, 1+nbr+mi, 0) && push!(nregs[j],i)
+
             # Positive
-            Ath_test[:,1] = hps[1:nth,hj]
-            bth_test[1] = hps[end,hj]-1e-6
-            isnonempty(Ath_test,bth_test;daqp_settings) && push!(pregs[j],i)
+            ws.A[:,1] = hps[1:nth,hj]
+            ws.b[1] = hps[end,hj]-1e-6
+            isfeasible(ws.p, 1+nbr+mi, 0) && push!(pregs[j],i)
         end
     end
     return nregs,pregs
@@ -135,8 +129,22 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
         return nothing
     end
 
+    # Setup workspace
+    p=DAQP.setup_c_workspace(sol.problem.n_theta);
+    A = Array{Float64}(undef,sol.problem.n_theta,250);
+    b = Array{Float64}(undef,250);
+    bl =-1e30*ones(250)
+    sense = zeros(Cint,250)
+
+    DAQP.init_c_workspace_ldp(p,A,b,bl,sense;max_radius=sol.problem.n_theta/2)
+    d_work = unsafe_load(Ptr{DAQPBase.Workspace}(p));
+    unsafe_store!(Ptr{Cdouble}(d_work.settings+fieldoffset(DAQP.DAQPSettings,14)),1e-9); # sing_tol
+    !isnothing(daqp_settings) && settings(p,daqp_settings)
+    ws = (p=p,A=A,b=b,bl=bl,sense=sense)
+
+    # Do initial classification
     nh = size(hps,2)
-    nregs,pregs = classify_regions(sol.CRs,hps,reg2hp;daqp_settings)
+    nregs,pregs = classify_regions(sol.CRs,hps,reg2hp,ws)
     hp_list, jump_list = Int[0],Int[0]
 
     N0 = (Set{Int}(1:length(sol.CRs)),[],1)
@@ -144,6 +152,7 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
     get_fbid = s->Set{Int}(fb_ids[collect(s)])
     split_objective = dual ? x->max(length.(x)...) : x-> max(length.(get_fbid.(x))...)
 
+    # Start exploration
     depth = 0
     while !isempty(U)
         reg_ids, branches, self_id = pop!(U)
@@ -159,7 +168,7 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
         min_ids = findall(==(min_val),vals)
         hp_ids = hp_ids[min_ids]
         if length(branches) > 0 && min_val > 1# Compute the actual split
-            splits = tuple.(classify_regions(sol.CRs,hps,reg2hp;reg_ids,hp_ids,branches,daqp_settings)...)
+            splits = tuple.(classify_regions(sol.CRs,hps,reg2hp,ws;reg_ids,hp_ids,branches)...)
             vals =[split_objective(s) for s in splits]
             min_val = minimum(vals)
             min_ids = findall(==(min_val),vals)
@@ -231,6 +240,9 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
         end
         fbs_dual = [denormalize(f,sol.scaling,sol.translation) for f in fbs_dual]
     end
+
+    # Cleanup
+    DAQP.free_c_workspace(ws.p)
 
     return BinarySearchTree(hps,fbs,new_hp_list,jump_list,depth, fbs_dual)
 end
