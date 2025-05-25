@@ -63,12 +63,13 @@ end
 
 # TODO: Can be cut in half by using points in CR 
 function classify_regions(CRs,hps, reg2hp, ws; reg_ids = nothing, hp_ids = nothing, branches = nothing)
-    isnothing(reg_ids) && (reg_ids = 1:length(CRs))
+    reg_ids = isnothing(reg_ids) ?  (1:length(CRs)) : findall(reg_ids)
     isnothing(hp_ids) && (hp_ids = 1:size(hps,2))
     nth, nh = size(hps,1)-1, length(hp_ids)
     
-    nregs = [Set{Int}() for _ in 1:nh]
-    pregs = [Set{Int}() for _ in 1:nh]
+    nR = length(CRs)
+    nregs = [falses(nR) for _ in 1:nh]
+    pregs = [falses(nR) for _ in 1:nh]
 
 
     nbr = isnothing(branches) ? 0 : length(branches)
@@ -80,7 +81,7 @@ function classify_regions(CRs,hps, reg2hp, ws; reg_ids = nothing, hp_ids = nothi
         end
     end
 
-    for i in reg_ids 
+    for i in reg_ids
         mi = length(CRs[i].bth)
         ws.A[:,1+nbr+1:1+nbr+mi] = CRs[i].Ath
         ws.b[1+nbr+1:1+nbr+mi] = CRs[i].bth .-1e-6
@@ -90,9 +91,9 @@ function classify_regions(CRs,hps, reg2hp, ws; reg_ids = nothing, hp_ids = nothi
             id = findfirst(x->first(x)==hj,reg2hp[i])
             if !isnothing(id) # hp is a facet of the region
                 if last(reg2hp[i][id]) == 1
-                    push!(pregs[j],i)
+                    pregs[j][i] = true
                 else
-                    push!(nregs[j],i)
+                    nregs[j][i] = true
                 end
                 continue
             end
@@ -100,12 +101,12 @@ function classify_regions(CRs,hps, reg2hp, ws; reg_ids = nothing, hp_ids = nothi
             # Negative
             ws.A[:,1] = -hps[1:nth,hj]
             ws.b[1] = -hps[end,hj]-1e-6
-            isfeasible(ws.p, 1+nbr+mi, 0) && push!(nregs[j],i)
+            isfeasible(ws.p, 1+nbr+mi, 0) && (nregs[j][i] = true)
 
             # Positive
             ws.A[:,1] = hps[1:nth,hj]
             ws.b[1] = hps[end,hj]-1e-6
-            isfeasible(ws.p, 1+nbr+mi, 0) && push!(pregs[j],i)
+            isfeasible(ws.p, 1+nbr+mi, 0) && (pregs[j][i] = true)
         end
     end
     return nregs,pregs
@@ -147,10 +148,12 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
     nregs,pregs = classify_regions(sol.CRs,hps,reg2hp,ws)
     hp_list, jump_list = Int[0],Int[0]
 
-    N0 = (Set{Int}(1:length(sol.CRs)),[],1)
+    nR = length(sol.CRs)
+
+    N0 = (trues(nR),[],1)
     U = [N0]
-    get_fbid = s->Set{Int}(fb_ids[collect(s)])
-    split_objective = dual ? x->max(length.(x)...) : x-> max(length.(get_fbid.(x))...)
+    get_fbid = s->Set{Int}(fb_ids[s])
+    split_objective = dual ? x->max(sum.(x)...) : x-> max(length.(get_fbid.(x))...)
 
     # Start exploration
     depth = 0
@@ -158,11 +161,11 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
         reg_ids, branches, self_id = pop!(U)
         depth = max(depth,length(branches))
 
-        hp_ids = reduce(∪,Set(first.(reg2hp[i])) for i in reg_ids);
+        hp_ids = reduce(∪,Set(first.(reg2hp[i])) for i in findall(reg_ids));
         hp_ids = collect(setdiff!(hp_ids,first(b) for b in branches))
 
         # First use heuristic to find candidates 
-        splits = [(reg_ids ∩ nregs[i], reg_ids ∩ pregs[i]) for i in hp_ids]
+        splits = [(reg_ids .* nregs[i], reg_ids .* pregs[i]) for i in hp_ids]
         vals = [split_objective(s) for s in splits]
         min_val = minimum(vals)
         min_ids = findall(==(min_val),vals)
@@ -174,7 +177,7 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
             min_ids = findall(==(min_val),vals)
             # Among the minimum values, do new split to maximum regions that split
             if(!dual)
-                vals =[max(length.(s)...) for s in splits[min_ids]]
+                vals =[max(sum.(s)...) for s in splits[min_ids]]
                 min_val_second,min_id = findmin(vals)
 
                 min_ids = min_ids[findall(==(min_val_second),vals)]
