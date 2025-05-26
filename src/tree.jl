@@ -208,7 +208,7 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
         for (new_regs,new_regs_comp,next, hp_sign) in [(new_nregs,new_pregs,next_id,-1), (new_pregs,new_nregs,next_id+1,1)]
             fb_cands = get_fbid(new_regs)
             if length(fb_cands) == 0
-                @warn "Empty region -> Defaulting to leaf node" min_val new_nregs new_pregs reg_ids branches
+                @debug "Empty region -> Defaulting to leaf node" min_val findall(new_nregs) findall(new_pregs) findall(reg_ids) branches
                 jump_list[next] = 0 # pointing at root node -> leaf
                 # Try to pick region that "disappeared", otherwise pick first region in parent
                 reg_id  = isempty(fb_cands) ? findfirst(reg_ids) : findfirst(reg_ids .* .!new_regs_comp)
