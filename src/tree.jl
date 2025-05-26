@@ -114,7 +114,7 @@ function classify_regions(CRs,hps, reg2hp, ws; reg_ids = nothing, hp_ids = nothi
     return nregs,pregs
 end
 
-function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals=1e12, dual=false)
+function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals=1e12, dual=false, bfs=true)
     if sol.status != :Solved
         verbose > 0 && @warn "Cannot build binary search tree. Solution status: $(sol.status)"
         return nothing
@@ -159,8 +159,9 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
 
     # Start exploration
     depth = 0
+    tree_pop! = bfs ? popfirst! : pop!
     while !isempty(U)
-        reg_ids, branches, self_id = pop!(U)
+        reg_ids, branches, self_id = tree_pop!(U)
         depth = max(depth,length(branches))
 
         hp_ids = reduce(∪,Set(first.(reg2hp[i])) for i in findall(reg_ids));

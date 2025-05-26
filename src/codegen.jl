@@ -8,8 +8,8 @@ function write_array(f,A,name,type)
 end
 
 function codegen(sol::Solution;dir="codegen",fname="pdaqp", float_type="float", int_type="unsigned short",
-        max_reals=1e12, dual = false)
-    bst = build_tree(sol;max_reals,dual);
+        max_reals=1e12, dual = false, bfs=true)
+    bst = build_tree(sol;max_reals,dual,bfs);
     isnothing(bst) && return -1
     codegen(bst;dir,fname,float_type,int_type)
     return 1
