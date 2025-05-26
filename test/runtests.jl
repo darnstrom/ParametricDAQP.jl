@@ -412,3 +412,41 @@ end
     @test length(sol.CRs) == 1
     @test norm(sol.CRs[1].z'*[th;1] - (-mpQP.H\(mpQP.F*th +mpQP.f))) < 1e-6
 end
+
+@testset "Clipping for C-generated BST" begin
+    # Setup mpQP
+    H =  [1.5064 0.4838; 0.4838 1.5258];
+    f = zeros(2,1)
+    F = [9.6652 5.2115; 7.0732 -7.0879];
+    A = [1.0 0; -1 0; 0 1; 0 -1];
+    B = zeros(4,2);
+    b = [1.0;2;3;4]
+    mpQP = (H=H,f=f,F=F,A=A,b=b,B=B)
+
+    # Setup parameter region of interest
+    ub,lb  = 1.5*ones(2), -1.5*ones(2)
+    Θ = (ub=ub,lb=lb)
+
+    opts = ParametricDAQP.Settings()
+    opts.store_dual=true
+    sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
+
+    srcdir = tempname()
+    bst = ParametricDAQP.build_tree(sol)
+    status = ParametricDAQP.codegen(sol; dir=srcdir, clipping=true)
+    if(!isnothing(Sys.which("gcc")))
+        testlib = "tree_test."* Base.Libc.Libdl.dlext
+        run(Cmd(`gcc -lm -fPIC -O3 -msse3 -xc -shared -o $testlib pdaqp.c`; dir=srcdir))
+        z = zeros(Cfloat,2)
+        global templib = joinpath(srcdir,testlib)
+        for i = 1:25
+            θ = 3*(rand(2).-0.5)
+            f = mpQP.f[:,1]+mpQP.F*θ
+            b = mpQP.b[:,1]+mpQP.B*θ
+            zref,~,~,info= DAQP.quadprog(mpQP.H,f,mpQP.A,b,-1e30*ones(4),zeros(Cint,4));
+            ccall(("pdaqp_evaluate", templib), Cvoid, (Ptr{Cfloat}, Ptr{Cfloat}), Cfloat.(θ),z)
+            @test norm(z - zref)/norm(z) < 1e-6
+            @test norm(ParametricDAQP.evaluate(bst,θ) - zref)/norm(zref) < 1e-6
+        end
+    end
+end

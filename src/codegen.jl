@@ -8,8 +8,8 @@ function write_array(f,A,name,type)
 end
 
 function codegen(sol::Solution;dir="codegen",fname="pdaqp", float_type="float", int_type="unsigned short",
-        max_reals=1e12, dual = false, bfs=true)
-    bst = build_tree(sol;max_reals,dual,bfs);
+        max_reals=1e12, dual = false, bfs=true, clipping=false)
+    bst = build_tree(sol;max_reals,dual,bfs,clipping);
     isnothing(bst) && return -1
     codegen(bst;dir,fname,float_type,int_type)
     return 1
@@ -41,6 +41,7 @@ function codegen(bst::BinarySearchTree; dir="codegen",fname="pdaqp", float_type=
     !isempty(duals) && write(fh, "#define $(uppercase(fname))_N_CONSTRAINTS $(size(bst.duals[1],2))\n\n")
     eval_sol_args = isempty(duals) ? "c_float* solution" : "c_float* solution, c_float* dual"
     write(fh, "void $(fname)_evaluate(c_float* parameter, $eval_sol_args);\n")
+    !isempty(bst.clipping) && write(fh, "c_float $(fname)_clip(c_float v, c_float min, c_float max);\n")
     write(fh, "#endif // ifndef $hguard\n");
     close(fh)
 
@@ -50,10 +51,13 @@ function codegen(bst::BinarySearchTree; dir="codegen",fname="pdaqp", float_type=
     write_array(fsrc,bst.halfplanes,fname*"_halfplanes","c_float")
     write_array(fsrc,feedbacks,fname*"_feedbacks","c_float")
     !isempty(duals) && write_array(fsrc,duals,fname*"_duals","c_float")
+    !isempty(bst.clipping) && write_array(fsrc,bst.clipping[:,1],fname*"_out_min","c_float")
+    !isempty(bst.clipping) && write_array(fsrc,bst.clipping[:,2],fname*"_out_max","c_float")
     # -1 to indices since 0 index C is 1 index Julia
     write_array(fsrc,bst.hp_list.-1,fname*"_hp_list","c_int")
     write_array(fsrc,bst.jump_list,fname*"_jump_list","c_int") 
 
+    clip_call = isempty(bst.clipping) ? "val" : "$(fname)_clip(val,$(fname)_out_min[i],$(fname)_out_max[i])"
     src_code = """void $(fname)_evaluate(c_float* parameter, $eval_sol_args){
         int i,j,disp;
         int id,next_id;
@@ -74,7 +78,7 @@ function codegen(bst::BinarySearchTree; dir="codegen",fname="pdaqp", float_type=
             for(j=0, val=0; j < $(uppercase(fname))_N_PARAMETER; j++)
                 val += parameter[j] * $(fname)_feedbacks[disp++];
             val += $(fname)_feedbacks[disp++];
-            solution[i] = val;
+            solution[i] = $clip_call;
         }
     """
     if(isempty(duals))
@@ -89,6 +93,15 @@ function codegen(bst::BinarySearchTree; dir="codegen",fname="pdaqp", float_type=
                 val += $(fname)_duals[disp++];
                 dual[i] = val;
             }
+        }
+        """
+    end
+
+    if(!isempty(bst.clipping))
+        src_code *= """
+        c_float $(fname)_clip(c_float v, c_float min, c_float max) {
+            const c_float vmin = v < min ? min : v;
+            return vmin > max ? max : vmin;
         }
         """
     end

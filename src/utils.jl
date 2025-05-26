@@ -23,6 +23,9 @@ function setup_mpp(mpQP;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
     m = length(mpQP.b)
 
     bnd_tbl = (haskey(mpQP,:bounds_table) && !isnothing(mpQP.bounds_table)) ? mpQP.bounds_table : collect(1:m)
+    out_inds = haskey(mpQP,:out_inds) && !isnothing(mpQP.out_inds) ? mpQP.out_inds : collect(1:n)
+
+    zlims =  get_lims(mpQP.A,mpQP.b,W,out_inds)
 
 
     free_ids = setdiff(1:nth,fix_ids)
@@ -34,9 +37,7 @@ function setup_mpp(mpQP;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
     H = (mpQP.H+mpQP.H')/2
     R = cholesky(H, check=false)
     if(!issuccess(R)) # Cannot formulate as an LDP => return MPQP
-        out_inds = haskey(mpQP,:out_inds) && !isnothing(mpQP.out_inds) ? mpQP.out_inds : collect(1:n)
-
-        return MPQP(H,Matrix(F'),mpQP.A,Matrix(B'),nth,n,bnd_tbl,ones(m),eq_ids,n-rank(H),out_inds)
+        return MPQP(H,Matrix(F'),mpQP.A,Matrix(B'),nth,n,bnd_tbl,ones(m),eq_ids,n-rank(H),out_inds,zlims)
     end
 
     M = mpQP.A/R.U
@@ -58,12 +59,10 @@ function setup_mpp(mpQP;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
 
     MRt = M/R.L
     RinvV = -(R.U\V)'
-    if haskey(mpQP,:out_inds) && !isnothing(mpQP.out_inds)
-        MRt = MRt[:,mpQP.out_inds]
-        RinvV = RinvV[:,mpQP.out_inds]
-    end
+    MRt = MRt[:,out_inds]
+    RinvV = RinvV[:,out_inds]
 
-    return MPLDP(M*M', M, MRt, RinvV, d, nth, n, bnd_tbl, norm_factors, eq_ids)
+    return MPLDP(M*M', M, MRt, RinvV, d, nth, n, bnd_tbl, norm_factors, eq_ids,zlims)
 end
 
 ## Normalize parameters to -1 ≤ θ ≤ 1
@@ -351,4 +350,30 @@ end
 ## Get CRs 
 function get_critical_regions(sol::Solution)
     return [denormalize(cr,sol.scaling,sol.translation) for cr in sol.CRs]
+end
+## Get unsaturated regions
+function get_unsaturated(CRs::Vector{CriticalRegion};tol = 1e-5)
+    fbs, reg2fb = get_feedbacks(CRs)
+    Nr = length(CRs)
+    unsat_ids = Int[]
+    for (k,f) in enumerate(fbs)
+        if  norm(f[1:end-1,:],Inf) > tol
+            append!(unsat_ids,findall(reg2fb[i] == k for i in 1:Nr))
+        end
+    end
+    return CRs[unsat_ids]
+end
+## Get limits of out variables
+function get_lims(A,b,W,out_inds)
+    zlims = [-1e30*ones(length(out_inds)) 1e30*ones(length(out_inds))]
+    for (k,id) in enumerate(out_inds)
+        for (i,a) = enumerate(eachrow(A))
+            if(a[id] == 1) &&  sum(!=(0),a) == 1 && iszero(W[i,:])
+                zlims[k,2] = min(b[i],zlims[k,2])
+            elseif(a[id] == -1) &&  sum(!=(0),a) == 1
+                zlims[k,1] = max(-b[i],zlims[k,1])
+            end
+        end
+    end
+    return zlims
 end

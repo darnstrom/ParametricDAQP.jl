@@ -18,6 +18,7 @@ struct MPLDP
     bounds_table::Vector{Int64}
     norm_factors::Vector{Float64}
     eq_ids::Vector{Int64}
+    out_lims::Matrix{Float64}
 end
 struct MPQP
     H::AbstractMatrix
@@ -31,6 +32,7 @@ struct MPQP
     eq_ids::Vector{Int64}
     rank_defficiency::Int64
     out_inds::Vector{Int64}
+    out_lims::Matrix{Float64}
 end
 
 Base.@kwdef mutable struct Settings 
