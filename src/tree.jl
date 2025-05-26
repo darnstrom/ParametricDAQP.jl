@@ -98,15 +98,17 @@ function classify_regions(CRs,hps, reg2hp, ws; reg_ids = nothing, hp_ids = nothi
                 continue
             end
 
+            slack = isnothing(branches) ? hps[:,hj]'*[CRs[i].th;-1] : NaN
+
             # Negative
             ws.A[:,1] = -hps[1:nth,hj]
             ws.b[1] = -hps[end,hj]-1e-6
-            isfeasible(ws.p, 1+nbr+mi, 0) && (nregs[j][i] = true)
+            (slack > 1e-6 || isfeasible(ws.p, 1+nbr+mi, 0)) && (nregs[j][i] = true)
 
             # Positive
             ws.A[:,1] = hps[1:nth,hj]
             ws.b[1] = hps[end,hj]-1e-6
-            isfeasible(ws.p, 1+nbr+mi, 0) && (pregs[j][i] = true)
+            (slack < -1e-6 || isfeasible(ws.p, 1+nbr+mi, 0)) && (pregs[j][i] = true)
         end
     end
     return nregs,pregs
@@ -209,7 +211,7 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
                 @warn "Empty region -> Defaulting to leaf node" min_val new_nregs new_pregs reg_ids branches
                 jump_list[next] = 0 # pointing at root node -> leaf
                 # Try to pick region that "disappeared", otherwise pick first region in parent
-                reg_id  = isempty(fb_cands) ? first(reg_ids) : first(setdiff(reg_ids,new_regs_comp))
+                reg_id  = isempty(fb_cands) ? findfirst(reg_ids) : findfirst(reg_ids .* .!new_regs_comp)
                 hp_list[next] = fb_ids[reg_id]
             elseif length(fb_cands) > 1
                 push!(U,(new_regs,branches ∪ [(hp_id,hp_sign)], next))
