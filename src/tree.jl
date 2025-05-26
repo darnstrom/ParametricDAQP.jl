@@ -5,6 +5,7 @@ struct BinarySearchTree
     jump_list::Vector{Int}
     depth::Int
     duals::Vector{Matrix{Float64}}
+    clipping::Matrix{Float64}
 end
 
 function get_halfplanes(CRs)
@@ -114,19 +115,24 @@ function classify_regions(CRs,hps, reg2hp, ws; reg_ids = nothing, hp_ids = nothi
     return nregs,pregs
 end
 
-function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals=1e12, dual=false, bfs=true)
+function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals=1e12,
+        dual=false, bfs=true, clipping=false)
     if sol.status != :Solved
         verbose > 0 && @warn "Cannot build binary search tree. Solution status: $(sol.status)"
         return nothing
     end
     sol.status != :Solved && return nothing
     verbose > 0 && @info "Building binary search tree" 
-    hps,reg2hp = get_halfplanes(sol.CRs)
-    fbs, fb_ids = get_feedbacks(sol.CRs)
+
+    CRs = clipping ? get_unsaturated(sol.CRs) : sol.CRs
+
+
+    hps,reg2hp = get_halfplanes(CRs)
+    fbs, fb_ids = get_feedbacks(CRs)
 
     # Approximate number of real numbers
     n_reals = length(hps) + length(fbs)*length(fbs[1])
-    dual && (n_reals += length(sol.CRs)*(sol.problem.n_theta+1)*length(sol.problem.norm_factors))
+    dual && (n_reals += length(CRs)*(sol.problem.n_theta+1)*length(sol.problem.norm_factors))
     if n_reals > max_reals
         verbose > 0 && @warn "Memory limit for real numbers (n_reals = $n_reals, max_reals = $max_reals) reached"
         return nothing
@@ -147,10 +153,10 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
 
     # Do initial classification
     nh = size(hps,2)
-    nregs,pregs = classify_regions(sol.CRs,hps,reg2hp,ws)
+    nregs,pregs = classify_regions(CRs,hps,reg2hp,ws)
     hp_list, jump_list = Int[0],Int[0]
 
-    nR = length(sol.CRs)
+    nR = length(CRs)
 
     N0 = (trues(nR),[],1)
     U = [N0]
@@ -174,7 +180,7 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
         min_ids = findall(==(min_val),vals)
         hp_ids = hp_ids[min_ids]
         if length(branches) > 0 && min_val > 1# Compute the actual split
-            splits = tuple.(classify_regions(sol.CRs,hps,reg2hp,ws;reg_ids,hp_ids,branches)...)
+            splits = tuple.(classify_regions(CRs,hps,reg2hp,ws;reg_ids,hp_ids,branches)...)
             vals =[split_objective(s) for s in splits]
             min_val = minimum(vals)
             min_ids = findall(==(min_val),vals)
@@ -239,7 +245,7 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
 
     fbs_dual = Matrix{Float64}[]
     if dual # XXX would prefer sparse representation, but makes C-code a lot messier...
-        for cr in sol.CRs
+        for cr in CRs
             lam = zeros(size(cr.lam,1),length(sol.problem.norm_factors))
             lam[:,cr.AS] = cr.lam
             push!(fbs_dual,lam)
@@ -250,7 +256,8 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
     # Cleanup
     DAQP.free_c_workspace(ws.p)
 
-    return BinarySearchTree(hps,fbs,new_hp_list,jump_list,depth, fbs_dual)
+    zlims = clipping ? sol.problem.out_lims : zeros(0,2)
+    return BinarySearchTree(hps,fbs,new_hp_list,jump_list,depth, fbs_dual, zlims)
 end
 
 function evaluate(bst::BinarySearchTree,θ)
@@ -266,5 +273,9 @@ function evaluate(bst::BinarySearchTree,θ)
         next_id = id+bst.jump_list[id]
     end
     fid = bst.hp_list[id]  
-    return bst.feedbacks[fid]'*[θ;1]
+    z = bst.feedbacks[fid]'*[θ;1]
+    if(!isempty(bst.clipping))
+        z = clamp.(out,bst.clipping[:,1],bst.clipping[:,2])
+    end
+    return z
 end
