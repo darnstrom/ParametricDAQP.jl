@@ -402,3 +402,13 @@ end
         @test norm(λ - λref)/norm(λ) < 1e-6
     end
 end
+
+@testset "Unconstrained" begin
+    n,nth = 10,5
+    mpQP,Θ = generate_mpQP(n,0,nth)
+    opts = ParametricDAQP.Settings()
+    sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
+    th = randn(nth)
+    @test length(sol.CRs) == 1
+    @test norm(sol.CRs[1].z'*[th;1] - (-mpQP.H\(mpQP.F*th +mpQP.f))) < 1e-6
+end

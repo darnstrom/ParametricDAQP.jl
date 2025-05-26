@@ -32,13 +32,30 @@ function mpsolve(mpQP,Θ;opts=nothing, AS0 = nothing) # bounds_table as option
         F,info = CriticalRegion[], (solve_time = 0, nCR = 0, nLPs = 0, nExplored = 0,status=:EmptyParameterRegion)
     end
 
+    # Unconstrained case
+    if(length(prob.norm_factors) == 0)
+        if prob isa MPQP # unconstrained + singular => unbounded
+            F,info = CriticalRegion[], (solve_time = 0, nCR = 0, nLPs = 0, nExplored = 0,status=:Unbounded)
+        else
+            nth = prob.n_theta
+            if(!isempty(Θ.ub))
+                A,b = [I(nth) -I(nth) Θ.A], [Θ.ub; -Θ.lb; Θ.b]
+            else
+                A,b =copy(Θ.A),copy(Θ.b)
+            end
+            F = CriticalRegion[CriticalRegion(Int[],A,b,prob.RinvV,zeros(nth+1,0),zeros(nth))]
+            info = (solve_time = 0, nCR = 0, nLPs = 0, nExplored = 0, status=:Solved)
+        end
+        return Solution(prob,F,tf.scaling,tf.center,opts,info.status), info
+    end
 
+    # Compute AS0 and start
     if(isnothing(AS0))
         AS0 = compute_AS0(prob,Θ)
     end
     if(isnothing(AS0))
         F,info = CriticalRegion[], (solve_time = 0, nCR = 0, nLPs = 0, nExplored = 0,status=:NoFeasibleParameter)
-    else
+    else # Where the magic happens
         F,info = mpdaqp_explicit(prob,Θ,AS0;opts)
     end
     return Solution(prob,F,tf.scaling,tf.center,opts,info.status), info
