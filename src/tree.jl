@@ -25,7 +25,7 @@ function get_halfplanes(CRs)
             # Check if hcand already exists in hps
             new_hp = true
             for (j,h) in  enumerate(eachcol(hps))
-                if(all(isapprox.(hcand,h,atol=1e-5,rtol=1e-5)))
+                if(all(isapprox(h[i],hcand[i],atol=1e-5,rtol=1e-5) for i in 1:nth+1))
                     push!(reg2hp[reg_id],(j,asign))
                     new_hp = false
                     break;
