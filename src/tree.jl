@@ -64,6 +64,7 @@ end
 
 # TODO: Can be cut in half by using points in CR 
 function classify_regions(CRs,hps, reg2hp, ws; reg_ids = nothing, hp_ids = nothing, branches = nothing)
+    eps_gap=1e-6+1e-12
     reg_ids = isnothing(reg_ids) ?  (1:length(CRs)) : findall(reg_ids)
     isnothing(hp_ids) && (hp_ids = 1:size(hps,2))
     nth, nh = size(hps,1)-1, length(hp_ids)
@@ -78,14 +79,14 @@ function classify_regions(CRs,hps, reg2hp, ws; reg_ids = nothing, hp_ids = nothi
         for i = 1:nbr
             (hid,hsign) = branches[i]
             ws.A[:,1+i] = hsign*hps[1:nth,hid]
-            ws.b[1+i] = hsign*hps[end,hid]-1e-6
+            ws.b[1+i] = hsign*hps[end,hid]-eps_gap
         end
     end
 
     for i in reg_ids
         mi = length(CRs[i].bth)
         ws.A[:,1+nbr+1:1+nbr+mi] = CRs[i].Ath
-        ws.b[1+nbr+1:1+nbr+mi] = CRs[i].bth .-1e-6
+        ws.b[1+nbr+1:1+nbr+mi] = CRs[i].bth .-eps_gap
 
         for (j,hj) in enumerate(hp_ids)
             # First check if the hp is a facet of the region
@@ -103,13 +104,13 @@ function classify_regions(CRs,hps, reg2hp, ws; reg_ids = nothing, hp_ids = nothi
 
             # Negative
             ws.A[:,1] = -hps[1:nth,hj]
-            ws.b[1] = -hps[end,hj]-1e-6
-            (slack > 1e-6 || isfeasible(ws.p, 1+nbr+mi, 0)) && (nregs[j][i] = true)
+            ws.b[1] = -hps[end,hj]-eps_gap
+            (slack > eps_gap || isfeasible(ws.p, 1+nbr+mi, 0)) && (nregs[j][i] = true)
 
             # Positive
             ws.A[:,1] = hps[1:nth,hj]
-            ws.b[1] = hps[end,hj]-1e-6
-            (slack < -1e-6 || isfeasible(ws.p, 1+nbr+mi, 0)) && (pregs[j][i] = true)
+            ws.b[1] = hps[end,hj]-eps_gap
+            (slack < -eps_gap || isfeasible(ws.p, 1+nbr+mi, 0)) && (pregs[j][i] = true)
         end
     end
     return nregs,pregs

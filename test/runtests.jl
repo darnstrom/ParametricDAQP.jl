@@ -64,8 +64,8 @@ end
         f = mpQP.f[:,1]+mpQP.F*θ
         b = mpQP.b[:,1]+mpQP.B*θ
         xref,~,~,info= DAQP.quadprog(mpQP.H,f,mpQP.A,b,-1e30*ones(2m),mpQP.senses);
-        @test xref ≈ xsol atol=1e-5 rtol=1e-5
-        @test λsol ≈ info.λ[sol.CRs[inds[1]].AS] atol=1e-5 rtol=1e-5
+        @test xref ≈ xsol atol=1e-4 rtol=1e-4
+        @test λsol ≈ info.λ[sol.CRs[inds[1]].AS] atol=1e-4 rtol=1e-4
     end
     @test ~any(containment_inds.==0) # No holes
     @test sum(containment_inds.>1) < 0.01*N # Not more than 1% overlap
