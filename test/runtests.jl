@@ -64,11 +64,45 @@ end
         f = mpQP.f[:,1]+mpQP.F*θ
         b = mpQP.b[:,1]+mpQP.B*θ
         xref,~,~,info= DAQP.quadprog(mpQP.H,f,mpQP.A,b,-1e30*ones(2m),mpQP.senses);
-        errs_primal[n] = norm(xsol-xref)/norm(xsol) 
-        errs_dual[n] = norm(λsol-info.λ[sol.CRs[inds[1]].AS])/norm(λsol)
+        @test xref ≈ xsol atol=1e-5 rtol=1e-5
+        @test λsol ≈ info.λ[sol.CRs[inds[1]].AS] atol=1e-5 rtol=1e-5
     end
-    @test maximum(errs_primal) < rel_tol
-    @test maximum(errs_dual) < rel_tol
+    @test ~any(containment_inds.==0) # No holes
+    @test sum(containment_inds.>1) < 0.01*N # Not more than 1% overlap
+end
+
+@testset "Unsymmetric parameter region " begin
+    n,m,nth = 3,10,4
+    rel_tol = 1e-5
+
+    opts = ParametricDAQP.Settings()
+    opts.store_points=true
+    opts.store_dual=true
+
+
+    mpQP,Θ = generate_mpQP(n,m,nth)
+    Θ.lb[:] = -(rand(nth).+2) # Make unsymmetric
+    sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
+
+    # Test for 10000 random points 
+    N = 10000
+    ths = 2*rand(nth,N).-1;
+    containment_inds = zeros(Int,N) 
+    errs_primal,errs_dual = zeros(N),zeros(N)
+    for n = 1:N
+        θ = ths[:,n]
+        CRs = ParametricDAQP.get_critical_regions(sol)
+        inds = pointlocation(θ,CRs);
+        containment_inds[n]=length(inds)
+        AS = CRs[inds[1]].AS
+        xsol = CRs[inds[1]].z'*[θ;1]
+        λsol = CRs[inds[1]].lam'*[θ;1]
+        f = mpQP.f[:,1]+mpQP.F*θ
+        b = mpQP.b[:,1]+mpQP.B*θ
+        xref,fval,exitflag,info= DAQP.quadprog(mpQP.H,f,mpQP.A,b,-1e30*ones(2m),mpQP.senses);
+        @test xref ≈ xsol atol=1e-5 rtol=1e-5
+        @test λsol ≈ info.λ[sol.CRs[inds[1]].AS] atol=1e-5 rtol=1e-5
+    end
     @test ~any(containment_inds.==0) # No holes
     @test sum(containment_inds.>1) < 0.01*N # Not more than 1% overlap
 end

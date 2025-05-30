@@ -74,6 +74,7 @@ function normalize_parameters(prob::MPLDP,Θ;eps_zero=1e-12)
     center = (Θ.lb+Θ.ub)/2;
     norm_factors = (Θ.ub-Θ.lb)/2;
     prob.d[end:end,:] += center'*prob.d[1:end-1,:];
+    prob.RinvV[end:end,:] += center'*prob.RinvV[1:end-1,:];
     for i in 1:nth
         prob.d[i,:] *= norm_factors[i];
         prob.RinvV[i,:] *= norm_factors[i];
@@ -81,26 +82,8 @@ function normalize_parameters(prob::MPLDP,Θ;eps_zero=1e-12)
 
     Ath = haskey(Θ,:A) ? Θ.A : zeros(nth,0);
     bth = haskey(Θ,:b) ? Θ.b : zeros(0);
-
-    # Normalize A to box -1 ≤ θ ≤ 1
-    A = norm_factors.*Ath
-    b = bth-(center'*Ath)[:]
-
-    # Normalize A
-    is_nonzero = falses(length(b))
-    for i in 1:length(b)
-        norm_factor = norm(view(A,:,i),2);
-        if(norm_factor>eps_zero)
-            rdiv!(view(A,:,i),norm_factor)
-            b[i]/=norm_factor
-            is_nonzero[i] = true
-        else
-            (b[i]<-eps_zero) && return nothing,nothing,nothing # trivially infeasible
-        end
-    end
-    Θ =(A=A[:,is_nonzero], b = b[is_nonzero], # TODO: verify
-        lb = -ones(nth), ub = ones(nth));
-
+    A,b = normalize_region(Ath,bth,norm_factors,center)
+    Θ =(A=A, b=b, lb=-ones(nth), ub=ones(nth));
     return prob, Θ,(center=center, scaling = 1 ./ norm_factors)
 end
 function normalize_parameters(prob::MPQP,Θ)
@@ -119,9 +102,29 @@ function normalize_parameters(prob::MPQP,Θ)
 
     Ath = haskey(Θ,:A) ? Θ.A : zeros(nth,0);
     bth = haskey(Θ,:b) ? Θ.b : zeros(0);
-    Θ =(A=norm_factors.*Ath, b = bth-(center'*Ath)[:], # TODO: verify
-        lb = -ones(nth), ub = ones(nth));
+    A,b = normalize_region(Ath,bth,norm_factors,center)
+    Θ =(A=A,b=b, lb = -ones(nth), ub = ones(nth));
     return prob, Θ,(center=center, scaling = 1 ./ norm_factors)
+end
+
+function normalize_region(Ath,bth,norm_factors,center)
+    # Normalize A to box -1 ≤ θ ≤ 1
+    A = norm_factors.*Ath
+    b = bth-(center'*Ath)[:]
+
+    # Normalize A (make half planes have norm = 1)
+    is_nonzero = falses(length(b))
+    for i in 1:length(b)
+        norm_factor = norm(view(A,:,i),2);
+        if(norm_factor>eps_zero)
+            rdiv!(view(A,:,i),norm_factor)
+            b[i]/=norm_factor
+            is_nonzero[i] = true
+        else
+            (b[i]<-eps_zero) && return nothing,nothing,nothing # trivially infeasible
+        end
+    end
+    return A[:,is_nonzero], b[is_nonzero]
 end
 
 ## Denormalize parameters
@@ -148,8 +151,8 @@ function denormalize(cr::CriticalRegion,scaling,translation)
     else 
         An,bn = zeros(0,0),zeros(0)
     end
-    xn = !isempty(cr.z) ? denormalize(cr.z,scaling,translation) : zeros(0,0)
-    lamn = !isempty(cr.lam) ? denormalize(cr.lam,scaling,translation) : zeros(0,0)
+    xn = !isempty(cr.z) ? denormalize(cr.z,scaling,translation) : cr.z 
+    lamn = !isempty(cr.lam) ? denormalize(cr.lam,scaling,translation) : cr.lam
     thn = !isempty(cr.th) ? denormalize(cr.th,scaling,translation) : zeros(0)
     return CriticalRegion(cr.AS,An,bn,xn,lamn,thn)
 end
