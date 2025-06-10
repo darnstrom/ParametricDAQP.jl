@@ -11,7 +11,7 @@ function codegen(sol::Solution;dir="codegen",fname="pdaqp", float_type="float", 
         max_reals=1e12, dual = false, bfs=true, clipping=false)
     bst = build_tree(sol;max_reals,dual,bfs,clipping);
     isnothing(bst) && return -1
-    codegen(bst;dir,fname,float_type,int_type)
+    codegen(bst;dir,fname,float_type,int_type,c_float_store)
     return 1
 end
 
