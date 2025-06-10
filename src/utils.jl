@@ -195,8 +195,14 @@ function setup_workspace(Θ,n_constr;opts=Settings())::Workspace
         UIntX = UInt64
     elseif(n_constr <= 128)
         UIntX = UInt128
+    elseif(n_constr <= 256)
+        UIntX = UInt256
+    elseif(n_constr <= 512)
+        UIntX = UInt512
+    elseif(n_constr <= 1024)
+        UIntX = UInt1024
     else
-        @error("Currently, 128 is the maximum number of supported constraints")
+        @error("Currently, 1024 is the maximum number of supported constraints")
     end
     # TODO: possible to use external package for larger UInt... 
     # 128 constraints is, however, probably above what is tractable anyways 
@@ -217,7 +223,7 @@ end
 function as2uint(AS::Vector{Int},UIntX)
     as = UIntX(0)
     for i in AS 
-        as |= 1 << (i-1)
+        as |= UIntX(1) << (i-1)
     end
     return as
 end

@@ -261,7 +261,7 @@ function explore_supersets(as,ws,id_cands,S,bounds_table)
     UIntX = typeof(as)
     for i in id_cands
         mask = UIntX(1)<<(i-1);
-        as&(mask|(1<<(bounds_table[i]-1))) != 0 && continue
+        as&(mask|(UIntX(1)<<(bounds_table[i]-1))) != 0 && continue
         #as&mask != 0 && continue
         as_new = as|mask
         if as_new ∉ ws.explored
