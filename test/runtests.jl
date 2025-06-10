@@ -415,13 +415,13 @@ end
     sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
 
     srcdir = tempname()
-    status = ParametricDAQP.codegen(sol; dir=srcdir)
+    status = ParametricDAQP.codegen(sol; dir=srcdir, c_float_store="float", float_type="double")
     if(!isnothing(Sys.which("gcc")))
         testlib = "tree_test."* Base.Libc.Libdl.dlext
         run(Cmd(`gcc -lm -fPIC -O3 -msse3 -xc -shared -o $testlib pdaqp.c`; dir=srcdir))
-        z = zeros(Cfloat,2)
+        z = zeros(2)
         global templib = joinpath(srcdir,testlib)
-        ccall(("pdaqp_evaluate", templib), Cvoid, (Ptr{Cfloat}, Ptr{Cfloat}), Cfloat.(θ),z)
+        ccall(("pdaqp_evaluate", templib), Cvoid, (Ptr{Cdouble}, Ptr{Cdouble}), θ,z)
         @test norm(z - zref)/norm(z) < 1e-6
     end
     srcdir = tempname()

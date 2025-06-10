@@ -7,7 +7,7 @@ function write_array(f,A,name,type)
     write(f,"};\n")
 end
 
-function codegen(sol::Solution;dir="codegen",fname="pdaqp", float_type="float", int_type="unsigned short",
+function codegen(sol::Solution;dir="codegen",fname="pdaqp", float_type="float", c_float_store=float_type, int_type="unsigned short",
         max_reals=1e12, dual = false, bfs=true, clipping=false)
     bst = build_tree(sol;max_reals,dual,bfs,clipping);
     isnothing(bst) && return -1
@@ -15,7 +15,7 @@ function codegen(sol::Solution;dir="codegen",fname="pdaqp", float_type="float", 
     return 1
 end
 
-function codegen(bst::BinarySearchTree; dir="codegen",fname="pdaqp", float_type="float", int_type="unsigned short")
+function codegen(bst::BinarySearchTree; dir="codegen",fname="pdaqp", float_type="float", c_float_store=float_type, int_type="unsigned short")
     isdir(dir) || mkdir(dir)
     # Get number of outputs 
     nth,nz = size(bst.feedbacks[1]).-(1,0)
@@ -35,6 +35,7 @@ function codegen(bst::BinarySearchTree; dir="codegen",fname="pdaqp", float_type=
     write(fh, "#define $hguard\n\n")
 
     write(fh, "typedef $float_type c_float;\n")
+    write(fh, "typedef $c_float_store c_float_store;\n")
     write(fh, "typedef $int_type c_int;\n")
     write(fh, "#define $(uppercase(fname))_N_PARAMETER $nth\n")
     write(fh, "#define $(uppercase(fname))_N_SOLUTION $nz\n\n")
@@ -48,8 +49,8 @@ function codegen(bst::BinarySearchTree; dir="codegen",fname="pdaqp", float_type=
     # Write source file
     fsrc = open(joinpath(dir,fname*".c"), "w")
     write(fsrc, "#include \"$fname.h\"\n")
-    write_array(fsrc,bst.halfplanes,fname*"_halfplanes","c_float")
-    write_array(fsrc,feedbacks,fname*"_feedbacks","c_float")
+    write_array(fsrc,bst.halfplanes,fname*"_halfplanes","c_float_store")
+    write_array(fsrc,feedbacks,fname*"_feedbacks","c_float_store")
     !isempty(duals) && write_array(fsrc,duals,fname*"_duals","c_float")
     !isempty(bst.clipping) && write_array(fsrc,bst.clipping[:,1],fname*"_out_min","c_float")
     !isempty(bst.clipping) && write_array(fsrc,bst.clipping[:,2],fname*"_out_max","c_float")
