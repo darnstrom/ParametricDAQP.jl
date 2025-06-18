@@ -276,7 +276,7 @@ function evaluate(bst::BinarySearchTree,θ)
     fid = bst.hp_list[id]  
     z = bst.feedbacks[fid]'*[θ;1]
     if(!isempty(bst.clipping))
-        z = clamp.(out,bst.clipping[:,1],bst.clipping[:,2])
+        z = clamp.(z,bst.clipping[:,1],bst.clipping[:,2])
     end
     return z
 end

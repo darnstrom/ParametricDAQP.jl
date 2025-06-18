@@ -199,20 +199,26 @@ end
     opts = ParametricDAQP.Settings()
     sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
     bst = ParametricDAQP.build_tree(sol)
+    bst_clip = ParametricDAQP.build_tree(sol;clipping=true)
 
     # Compare bst with QP solution
     N = 1000
     ths = 1.5*(2*rand(2,N).-1);
     errs = zeros(N)
+    errs_clip = zeros(N)
     for n = 1:N
         θ = ths[:,n]
         xbst = ParametricDAQP.evaluate(bst,θ)
+        xbst_clip = ParametricDAQP.evaluate(bst_clip,θ)
         f = mpQP.f[:,1]+mpQP.F*θ
         b = mpQP.b[:,1]+mpQP.B*θ
         xref,~,~,info= DAQP.quadprog(mpQP.H,f,mpQP.A,b);
         errs[n] = norm(xref-xbst)
+
+        errs_clip[n] = norm(xref-xbst_clip)
     end
     @test all(errs.< 1e-5)
+    @test all(errs_clip.< 1e-5)
 end
 
 @testset "Zero rows in A" begin
