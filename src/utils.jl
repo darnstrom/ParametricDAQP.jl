@@ -317,13 +317,17 @@ end
 ## Compute AS0 
 function compute_AS0(mpLDP::MPLDP,Θ)
     # Center in box is zero -> dtot = d[end,:]
-    senses = zeros(Cint,size(mpLDP.d,2));
+    senses = zeros(Cint,size(mpLDP.d,2)+length(Θ.b));
     senses[mpLDP.eq_ids] .= DAQP.EQUALITY
-    _,_,exitflag,info= DAQP.quadprog(zeros(0,0),zeros(0),mpLDP.M,mpLDP.d[end,:],Float64[], senses);
-    exitflag == 1 && return mpLDP.eq_ids ∪ findall(abs.(info.λ).> 0)
+
+    if(isempty(Θ.A) || all(Θ.b .>= 0)) # Check if origin is feasible
+        _,_,exitflag,info= DAQP.quadprog(zeros(0,0),zeros(0),mpLDP.M,mpLDP.d[end,:],Float64[], senses);
+        exitflag == 1 && return mpLDP.eq_ids ∪ findall(abs.(info.λ).> 0)
+    end
 
     # Solve lifted feasibility problem in (x,θ)-space to find initial point 
-    x,_,exitflag,info= DAQP.quadprog(zeros(0,0),zeros(0),[-mpLDP.d[1:end-1,:]' mpLDP.M],mpLDP.d[end,:],Float64[],senses);
+    Alift = [-mpLDP.d[1:end-1,:]' mpLDP.M; Θ.A' zeros(length(Θ.b),mpLDP.n)]
+    x,_,exitflag,info= DAQP.quadprog(zeros(0,0),zeros(0),Alift,[mpLDP.d[end,:];Θ.b],Float64[],senses);
     if exitflag != 1
         @warn "There is no parameter that makes the problem feasible"
         return nothing
@@ -335,16 +339,19 @@ end
 function compute_AS0(mpQP::MPQP,Θ)
     # Center in box is zero -> dtot = d[end,:]
     # TODO: set eps_prox ≠ 0
-    senses = zeros(Cint,size(mpQP.B,2));
+    senses = zeros(Cint,size(mpQP.B,2)+length(Θ.b));
     senses[mpQP.eq_ids] .= DAQP.EQUALITY
     d = DAQP.Model();
     DAQP.settings(d,Dict(:eps_prox=>1e-6)) # Since the Hessian is singular
-    DAQP.setup(d,mpQP.H,mpQP.F[end,:],mpQP.A,mpQP.B[end,:],Float64[], senses);
-    x,fval,exitflag,info = DAQP.solve(d);
-    exitflag == 1 && return findall(abs.(info.λ).> 0)
+    if(isempty(Θ.A) || all(Θ.b .>= 0)) # if origin is feasible
+        DAQP.setup(d,mpQP.H,mpQP.F[end,:],mpQP.A,mpQP.B[end,:],Float64[], senses);
+        x,fval,exitflag,info = DAQP.solve(d);
+        exitflag == 1 && return findall(abs.(info.λ).> 0)
+    end
 
+    Alift = [-mpQP.B[1:end-1,:]' mpQP.A; Θ.A' zeros(length(Θ.b),mpQP.n)]
     # Solve lifted feasibility problem in (x,θ)-space to find initial point 
-    x,_,exitflag,info= DAQP.quadprog(zeros(0,0),zeros(0),[-mpQP.B[1:end-1,:]' mpQP.A],mpQP.B[end,:],Float64[],senses);
+    x,_,exitflag,info= DAQP.quadprog(zeros(0,0),zeros(0),Alift,[mpQP.B[end,:];Θ.b],Float64[],senses);
     if exitflag != 1
         @warn "There is no parameter that makes the problem feasible"
         return nothing
