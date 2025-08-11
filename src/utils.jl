@@ -107,7 +107,7 @@ function normalize_parameters(prob::MPQP,Θ)
     return prob, Θ,(center=center, scaling = 1 ./ norm_factors)
 end
 
-function normalize_region(Ath,bth,norm_factors,center)
+function normalize_region(Ath,bth,norm_factors,center; eps_zero=1e-12)
     # Normalize A to box -1 ≤ θ ≤ 1
     A = norm_factors.*Ath
     b = bth-(center'*Ath)[:]
