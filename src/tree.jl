@@ -123,14 +123,18 @@ function reduce_candidates(criteria,splits,ids)
     return min_val,splits[min_ids],ids[min_ids]
 end
 
-function get_split(CRs,hps,reg2hp,reg_ids,pregs,nregs,branches,criterions,ws)
+function get_split(CRs,hps,reg2hp,reg_ids,pregs,nregs,branches,criterions,ws;balancing_level=0)
 
     hp_ids = reduce(∪,Set(first.(reg2hp[i])) for i in findall(reg_ids));
     hp_ids = collect(setdiff!(hp_ids,first(b) for b in branches))
 
-    # First use heuristic to find candidates
     splits = [(reg_ids .* nregs[i], reg_ids .* pregs[i]) for i in hp_ids]
-    min_val,splits,hp_ids = reduce_candidates(criterions[1],splits,hp_ids)
+    # Use heuristic to find candidates
+    if(length(branches) >= balancing_level)
+        min_val,splits,hp_ids = reduce_candidates(criterions[1],splits,hp_ids)
+    else
+        min_val = Inf
+    end
     if length(branches) > 0 && min_val > 1# Compute the actual split
         splits = tuple.(classify_regions(CRs,hps,reg2hp,ws;reg_ids,hp_ids,branches)...)
         for c in criterions
@@ -179,7 +183,7 @@ function get_duals(CRs,sol)
 end
 
 function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals=1e12,
-        dual=false, bfs=true, clipping=false)
+        dual=false, bfs=true, clipping=true, balancing_level=0)
     if sol.status != :Solved
         verbose > 0 && @warn "Cannot build binary search tree. Solution status: $(sol.status)"
         return nothing
@@ -217,9 +221,9 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
     while !isempty(U)
         reg_ids, branches, self_id = tree_pop!(U)
         depth = max(depth,length(branches))
-
         # Get halfplane to cut
-        hp_id, (new_nregs, new_pregs) = get_split(CRs,hps,reg2hp,reg_ids,pregs,nregs,branches,criterions,ws)
+        hp_id, (new_nregs, new_pregs) = get_split(CRs,hps,reg2hp,reg_ids,pregs,nregs,branches,criterions,ws;
+                                                  balancing_level)
         #vals = [c((new_nregs,new_pregs)) for c in criterions]
 
         # Update tree for current node
