@@ -129,6 +129,8 @@ function get_split(CRs,hps,reg2hp,reg_ids,pregs,nregs,branches,criterions,ws;bal
     hp_ids = collect(setdiff!(hp_ids,first(b) for b in branches))
 
     splits = [(reg_ids .* nregs[i], reg_ids .* pregs[i]) for i in hp_ids]
+    isempty(splits) && return hp_ids, (falses(0),falses(0))
+
     # Use heuristic to find candidates
     if(length(branches) >= balancing_level)
         min_val,splits,hp_ids = reduce_candidates(criterions[1],splits,hp_ids)
@@ -224,6 +226,12 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
         # Get halfplane to cut
         hp_id, (new_nregs, new_pregs) = get_split(CRs,hps,reg2hp,reg_ids,pregs,nregs,branches,criterions,ws;
                                                   balancing_level)
+        if isempty(hp_id) # Should never happen, but might due to numerics
+            jump_list[self_id] = 0 # pointing at root node -> leaf
+            hp_list[self_id] = first(get_fbid(reg_ids))
+            @warn "Superfluous branch -> might be due to bad numerics"
+            continue
+        end
         #vals = [c((new_nregs,new_pregs)) for c in criterions]
 
         # Update tree for current node
