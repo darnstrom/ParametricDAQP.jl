@@ -14,9 +14,9 @@ function setup_mpp(mpQP;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
 
     eq_ids = hasproperty(mpQP,:eq_ids) && !isnothing(mpQP.eq_ids) ? mpQP.eq_ids : Int[]
     if hasproperty(mpQP,:sense)
-        eq_ids = eq_ids ∪ findall(mpQP.sense.&DAQP.EQUALITY.!=0)
+        eq_ids = eq_ids ∪ findall(mpQP.sense.&DAQPBase.EQUALITY.!=0)
     elseif hasproperty(mpQP,:senses)
-        eq_ids = eq_ids ∪ findall(mpQP.senses.&DAQP.EQUALITY.!=0)
+        eq_ids = eq_ids ∪ findall(mpQP.senses.&DAQPBase.EQUALITY.!=0)
     end
 
     n, nth = size(f_theta) 
@@ -163,7 +163,7 @@ function reset_workspace(ws)
     ws.sense[1:ws.m].=0
     ws.m = ws.m0 
     p = ws.DAQP_workspace
-    ccall((:reset_daqp_workspace,DAQP.libdaqp),Cvoid,(Ptr{Cvoid},),p);
+    ccall((:reset_daqp_workspace,DAQPBase.libdaqp),Cvoid,(Ptr{Cvoid},),p);
 end
 
 ## Setup workspace
@@ -208,14 +208,14 @@ function setup_workspace(Θ,n_constr;opts=Settings())::Workspace
     # 128 constraints is, however, probably above what is tractable anyways 
 
     #Create C workspace
-    p=DAQP.setup_c_workspace(nth);
+    p=DAQPBase.setup_c_workspace(nth);
     # Set fval_bound to maximal radius for early termination
     # (the region is contained in a ball with this radius)
     max_radius =  isempty(Θ.ub) ? nth : nth*(maximum(Θ.ub)^2)/2;
     ws = Workspace{UIntX}(A,b,blower,zeros(Cint,m_max),0,m0,p,falses(0,0),0, 
                        UIntX[], UIntX[], UIntX[], CriticalRegion[],Set{UIntX}(),opts,
                        falses(n_constr),falses(n_constr),0, zeros(n_constr),zeros(0,0));
-    DAQP.init_c_workspace_ldp(p,ws.Ath,ws.bth,ws.bth_lower,ws.sense;max_radius)
+    DAQPBase.init_c_workspace_ldp(p,ws.Ath,ws.bth,ws.bth_lower,ws.sense;max_radius)
     settings(ws.DAQP_workspace,opts.daqp_settings)
     return ws 
 end
@@ -250,15 +250,15 @@ function extract_CR(ws,prob)
         islowrank(prob,ws) && return nothing
     end
     if(ws.opts.store_points)
-        dws = unsafe_load(Ptr{DAQP.Workspace}(ws.DAQP_workspace))
+        dws = unsafe_load(Ptr{DAQPBase.Workspace}(ws.DAQP_workspace))
         θ = copy(unsafe_wrap(Vector{Float64}, dws.u, dws.n, own=false))
     else
         θ = zeros(0)
     end
     if(ws.opts.lowdim_tol > 0)
         rhs_offset = ws.opts.lowdim_tol + 1e-6 # + 1e-6 to account for tolerance in DAQP
-        ccall((:deactivate_constraints,DAQP.libdaqp),Cvoid,(Ptr{Cvoid},),ws.DAQP_workspace);
-        ccall((:reset_daqp_workspace,DAQP.libdaqp),Cvoid,(Ptr{Cvoid},),ws.DAQP_workspace);
+        ccall((:deactivate_constraints,DAQPBase.libdaqp),Cvoid,(Ptr{Cvoid},),ws.DAQP_workspace);
+        ccall((:reset_daqp_workspace,DAQPBase.libdaqp),Cvoid,(Ptr{Cvoid},),ws.DAQP_workspace);
         ws.bth[1:ws.m].-=rhs_offset; # Shrink region 
         is_feasible = isfeasible(ws.DAQP_workspace, ws.m, 0)
         ws.bth[1:ws.m].+=rhs_offset; # Restore rhs
@@ -269,7 +269,7 @@ function extract_CR(ws,prob)
     # Extract regions/solution
     if(ws.opts.store_regions)
         if(ws.opts.remove_redundant)
-            ccall((:deactivate_constraints,DAQP.libdaqp),Cvoid,(Ptr{Cvoid},),ws.DAQP_workspace);
+            ccall((:deactivate_constraints,DAQPBase.libdaqp),Cvoid,(Ptr{Cvoid},),ws.DAQP_workspace);
             Ath,bth = minrep(ws.DAQP_workspace); 
         else
             Ath,bth = ws.Ath[:,1:ws.m],ws.bth[1:ws.m];
@@ -318,49 +318,49 @@ end
 function compute_AS0(mpLDP::MPLDP,Θ)
     # Center in box is zero -> dtot = d[end,:]
     senses = zeros(Cint,size(mpLDP.d,2)+length(Θ.b));
-    senses[mpLDP.eq_ids] .= DAQP.EQUALITY
+    senses[mpLDP.eq_ids] .= DAQPBase.EQUALITY
 
     if(isempty(Θ.A) || all(Θ.b .>= 0)) # Check if origin is feasible
-        _,_,exitflag,info= DAQP.quadprog(zeros(0,0),zeros(0),mpLDP.M,mpLDP.d[end,:],Float64[], senses);
+        _,_,exitflag,info= DAQPBase.quadprog(zeros(0,0),zeros(0),mpLDP.M,mpLDP.d[end,:],Float64[], senses);
         exitflag == 1 && return mpLDP.eq_ids ∪ findall(abs.(info.λ).> 0)
     end
 
     # Solve lifted feasibility problem in (x,θ)-space to find initial point 
     Alift = [-mpLDP.d[1:end-1,:]' mpLDP.M; Θ.A' zeros(length(Θ.b),mpLDP.n)]
-    x,_,exitflag,info= DAQP.quadprog(zeros(0,0),zeros(0),Alift,[mpLDP.d[end,:];Θ.b],Float64[],senses);
+    x,_,exitflag,info= DAQPBase.quadprog(zeros(0,0),zeros(0),Alift,[mpLDP.d[end,:];Θ.b],Float64[],senses);
     if exitflag != 1
         @warn "There is no parameter that makes the problem feasible"
         return nothing
     end
     θ = x[1:mpLDP.n_theta]
-    _,_,exitflag,info= DAQP.quadprog(zeros(0,0),zeros(0),mpLDP.M,mpLDP.d'*[θ;1],Float64[],senses);
+    _,_,exitflag,info= DAQPBase.quadprog(zeros(0,0),zeros(0),mpLDP.M,mpLDP.d'*[θ;1],Float64[],senses);
     return mpLDP.eq_ids ∪ findall(abs.(info.λ).> 0)
 end
 function compute_AS0(mpQP::MPQP,Θ)
     # Center in box is zero -> dtot = d[end,:]
     # TODO: set eps_prox ≠ 0
     senses = zeros(Cint,size(mpQP.B,2)+length(Θ.b));
-    senses[mpQP.eq_ids] .= DAQP.EQUALITY
-    d = DAQP.Model();
-    DAQP.settings(d,Dict(:eps_prox=>1e-6)) # Since the Hessian is singular
+    senses[mpQP.eq_ids] .= DAQPBase.EQUALITY
+    d = DAQPBase.Model();
+    DAQPBase.settings(d,Dict(:eps_prox=>1e-6)) # Since the Hessian is singular
     if(isempty(Θ.A) || all(Θ.b .>= 0)) # if origin is feasible
-        DAQP.setup(d,mpQP.H,mpQP.F[end,:],mpQP.A,mpQP.B[end,:],Float64[], senses);
-        x,fval,exitflag,info = DAQP.solve(d);
+        DAQPBase.setup(d,mpQP.H,mpQP.F[end,:],mpQP.A,mpQP.B[end,:],Float64[], senses);
+        x,fval,exitflag,info = DAQPBase.solve(d);
         exitflag == 1 && return findall(abs.(info.λ).> 0)
     end
 
     Alift = [-mpQP.B[1:end-1,:]' mpQP.A; Θ.A' zeros(length(Θ.b),mpQP.n)]
     # Solve lifted feasibility problem in (x,θ)-space to find initial point 
-    x,_,exitflag,info= DAQP.quadprog(zeros(0,0),zeros(0),Alift,[mpQP.B[end,:];Θ.b],Float64[],senses);
+    x,_,exitflag,info= DAQPBase.quadprog(zeros(0,0),zeros(0),Alift,[mpQP.B[end,:];Θ.b],Float64[],senses);
     if exitflag != 1
         @warn "There is no parameter that makes the problem feasible"
         return nothing
     end
     θ = x[1:mpQP.n_theta]
-    d = DAQP.Model();
-    DAQP.settings(d,Dict(:eps_prox=>1e-6)) # Since the Hessian is singular
-    DAQP.setup(d,mpQP.H,mpQP.F'*[θ;1],mpQP.A,mpQP.B'*[θ;1],Float64[],senses);
-    x,fval,exitflag,info = DAQP.solve(d);
+    d = DAQPBase.Model();
+    DAQPBase.settings(d,Dict(:eps_prox=>1e-6)) # Since the Hessian is singular
+    DAQPBase.setup(d,mpQP.H,mpQP.F'*[θ;1],mpQP.A,mpQP.B'*[θ;1],Float64[],senses);
+    x,fval,exitflag,info = DAQPBase.solve(d);
     return findall(abs.(info.λ).> 0)
 end
 ## Get CRs 

@@ -2,7 +2,6 @@ module ParametricDAQP
 
 using LinearAlgebra, DAQPBase, PolyDAQP
 using BitIntegers
-const DAQP = DAQPBase
 export MPLDP
 
 include("types.jl")

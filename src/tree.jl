@@ -273,7 +273,7 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
     fbs_dual = dual ?  get_duals(CRs,sol) : Matrix{Float64}[] # XXX sparse representation makes C-code messy...
 
     # Cleanup
-    DAQP.free_c_workspace(ws.p)
+    DAQPBase.free_c_workspace(ws.p)
 
     zlims = clipping ? sol.problem.out_lims : zeros(0,2)
     return BinarySearchTree(hps,fbs,hp_list,jump_list,depth, fbs_dual, zlims)
