@@ -12,15 +12,16 @@ end
 
 function Base.show(io::IO, sol::Solution)
     println("==== Parametric Solution ========")
-    if(length(sol.CRs) < 0)
+    if(length(sol.CRs) == 0)
         println(io, "Empty parametric solution")
         println(io, "Status: $(sol.status)")
     else
         println(io, "Status: $(sol.status)")
-        println(io, "Number of regions:     $(length(sol.CRs))")
-        println(io, "Number of parameters:  $(sol.problem.n_theta)")
-        println(io, "Number of constraints: $(length(sol.problem.norm_factors))")
-        println(io, "Number of variables:   $(sol.problem.n)")
+        println(io, "# of regions:     $(length(sol.CRs))")
+        println(io, "# of parameters:  $(sol.problem.n_theta)")
+        println(io, "# of constraints: $(length(sol.problem.norm_factors))")
+        println(io, "# of variables:   $(sol.problem.n)")
+        println(io, "# of output dims: $(size(sol.CRs[1].z,2))")
     end
     println("=================================")
 end

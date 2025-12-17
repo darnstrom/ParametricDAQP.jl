@@ -125,7 +125,7 @@ function mpdaqp_explicit(prob,Θ,AS0;opts = Settings())
 
     end
     # Exploration completed, cleanup 
-    DAQP.free_c_workspace(ws.DAQP_workspace)
+    DAQPBase.free_c_workspace(ws.DAQP_workspace)
     solve_time = (time_ns()-t0)/1e9
     opts.verbose>0 && print_final(ws)
     return ws.F, (solve_time = solve_time, nCR = length(ws.F), 
