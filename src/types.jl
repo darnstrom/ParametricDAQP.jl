@@ -1,4 +1,4 @@
-mutable struct CriticalRegion 
+mutable struct CriticalRegion
     AS::Vector{Int16}
     Ath::Matrix{Float64}
     bth::Vector{Float64}
@@ -7,7 +7,7 @@ mutable struct CriticalRegion
     th::Vector{Float64}
 end
 
-struct MPLDP 
+struct MPLDP
     MM::Matrix{Float64}
     M::Matrix{Float64}
     MRt::Matrix{Float64}
@@ -35,9 +35,92 @@ struct MPQP
     out_lims::Matrix{Float64}
 end
 
-Base.@kwdef mutable struct Settings 
+struct MPVI
+    # VI(Hx + Fθ + f, Ax <= Bθ + b)
+    # where f, b are the last rows of F,B, respect.
+    H::AbstractMatrix # size = n_x * n_x
+    F::Matrix{Float64} # transpose: size = n_θ + 1 * n_x 
+    A::Matrix{Float64} # size = n_constr * n_x
+    B::Matrix{Float64} # transpose: size = n_θ + 1 * n_constr 
+    AHinv::Matrix{Float64} # size = n_constr * n_x
+    AHinvA::Matrix{Float64} # size = n_constr * n_constr
+    n_theta::Int64
+    n::Int64
+    bounds_table::Vector{Int64}
+    norm_factors::Vector{Float64}
+    eq_ids::Vector{Int64} # introduced for compatibility reasons - only inequalities are considered in the VI case
+end
+
+"""
+    MPVI(
+        H::AbstractMatrix{Float64},
+        G::AbstractMatrix{Float64},
+        f::AbstractVector{Float64},
+        A::AbstractMatrix{Float64},
+        E::AbstractMatrix{Float64},
+        b::AbstractVector{Float64}
+    )
+
+Constructs an `MPVI` (Multi-Parametric Variational Inequality) problem instance.
+
+# Arguments
+- `H::AbstractMatrix{Float64}`: Matrix representing the linear part of the affine mapping.
+- `G::AbstractMatrix{Float64}`: Matrix for the parametric part of the affine mapping.
+- `f::AbstractVector{Float64}`: Vector for the constant part of the affine mapping.
+- `A::AbstractMatrix{Float64}`: Constraint matrix.
+- `E::AbstractMatrix{Float64}`: Matrix for the parametric part of the constraint right-hand side.
+- `b::AbstractVector{Float64}`: Vector for the constant part of the constraint right-hand side.
+
+# Returns
+- An `MPVI` object containing the problem data and precomputed matrices for efficient solution.
+
+# Throws
+- `ArgumentError` if the input matrices and vectors do not have compatible dimensions.
+- `ArgumentError` if `H + H'` is not positive definite.
+"""
+function MPVI(
+    H::AbstractMatrix{Float64},
+    G::AbstractMatrix{Float64},
+    f::AbstractVector{Float64},
+    A::AbstractMatrix{Float64},
+    E::AbstractMatrix{Float64},
+    b::AbstractVector{Float64}
+)
+    n_theta = size(G, 2)
+    n = size(H, 1)
+    m = size(A, 1)  # Number of constraints
+
+    # Sanity checks
+    @assert size(A, 2) == n "[MPVI constructor] Columns of A must equal number of decision variables"
+    @assert size(E, 1) == m "[MPVI constructor] Rows of E must match rows of A"
+    @assert length(b) == m "[MPVI constructor] Length of b must match rows of A"
+
+    @assert size(G, 1) == n "[MPVI constructor] Rows of G must equal number of decision variables"
+    @assert size(H, 2) == n "[MPVI constructor] H must be square"
+
+    @assert length(f) == n "[MPVI constructor] Length of f must match number of decision variables"
+
+    # Ensure H is square and positive definite
+    @assert size(H, 1) == size(H, 2) "[MPVI constructor] H must be square"
+    try
+        cholesky(H + H')
+    catch
+        throw(ArgumentError("[MPVI constructor] H + H' must be positive definite"))
+    end
+
+    AHinv = A / H
+    AHinvA = AHinv * A'
+
+    norm_factors = ones(m)
+    bounds_table = collect(1:m)
+    eq_ids = Int64[]
+
+    return MPVI(H, [G'; f'], A, [E'; b'], AHinv, AHinvA, n_theta, n, bounds_table, norm_factors, eq_ids)
+end
+
+Base.@kwdef mutable struct Settings
     eps_zero::Float64 = 1e-12
-    verbose::Int64 = 1 
+    verbose::Int64 = 1
     store_AS::Bool = true
     store_points::Bool = true
     store_regions::Bool = true
@@ -45,7 +128,7 @@ Base.@kwdef mutable struct Settings
     remove_redundant::Bool = true
     time_limit::Int64 = 1e5
     region_limit::Int64 = 1e12
-    chunk_size::Int64 = 1e3 
+    chunk_size::Int64 = 1e3
     factorization::Symbol = :chol
     postcheck_rank::Bool = true
     lowdim_tol::Float64 = 1e-12
@@ -56,7 +139,7 @@ Settings(opts::Nothing) = Settings()
 Settings(opts::Settings) = opts
 function Settings(opts::AbstractDict)
     out = Settings()
-    for (key,value) in opts
+    for (key, value) in opts
         if hasproperty(out, Symbol(key))
             setproperty!(out, Symbol(key), value)
         else
@@ -72,7 +155,7 @@ mutable struct Workspace{T<:Integer}
     bth_lower::Vector{Float64}
     sense::Vector{Cint}
     m::Int64
-    m0::Int64 
+    m0::Int64
     DAQP_workspace::Ptr{DAQPBase.Workspace}
     ASs::BitMatrix
     nLPs::Int64
@@ -85,14 +168,14 @@ mutable struct Workspace{T<:Integer}
     IS::BitVector
     AS::BitVector
     nAS::Int64
-    norm_factors:: Vector{Float64}
+    norm_factors::Vector{Float64}
     x::Matrix{Float64}
 end
 
 struct Solution
-    problem::Union{MPLDP,MPQP}
+    problem::Union{MPLDP,MPQP,MPVI}
     CRs::Vector{CriticalRegion}
-    scaling::Vector{Float64} 
+    scaling::Vector{Float64}
     translation::Vector{Float64}
     settings::Settings
     status::Symbol

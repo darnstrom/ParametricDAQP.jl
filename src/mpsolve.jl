@@ -1,272 +1,369 @@
 ## mpsolve 
 # Compute the explicit solution to multi-parameteric QP
-function mpsolve(mpQP,Θ;opts=nothing, AS0 = nothing) # bounds_table as option
+function mpsolve(mpQP, Θ; opts=nothing, AS0=nothing) # bounds_table as option
     opts = Settings(opts)
     # Hande bounds 
-    Δb = Θ.ub-Θ.lb 
-    if any(Δb .< -opts.eps_zero) 
+    Δb = Θ.ub - Θ.lb
+    if any(Δb .< -opts.eps_zero)
         opts.verbose > 0 && @error "Θ is empty"
-        return nothing,:EmptyParameterRegion
+        return nothing, :EmptyParameterRegion
     end
 
 
     # Check if some parameters are fixed
     fix_ids = findall(Δb .< opts.eps_zero) # ub[fix_ids] = lb[fix_ids]
     fix_vals = Θ.ub[fix_ids]
-    if(!isempty(fix_ids))
+    if (!isempty(fix_ids))
         opts.verbose > 0 && @warn "θ$fix_ids fixed at $fix_vals"
-        free_ids = setdiff(1:length(Θ.ub),fix_ids)
-        if hasproperty(Θ,:A)
-            Θ=(A=Θ.A[free_ids,:], b = Θ.b+Θ.A[fix_ids,:]'*fix_vals, 
-               lb=Θ.lb[free_ids],ub=Θ.ub[free_ids])
+        free_ids = setdiff(1:length(Θ.ub), fix_ids)
+        if hasproperty(Θ, :A)
+            Θ = (A=Θ.A[free_ids, :], b=Θ.b + Θ.A[fix_ids, :]' * fix_vals,
+                lb=Θ.lb[free_ids], ub=Θ.ub[free_ids])
         else
-            Θ=(lb=Θ.lb[free_ids],ub=Θ.ub[free_ids])
+            Θ = (lb=Θ.lb[free_ids], ub=Θ.ub[free_ids])
         end
     end
 
     # Setup parametric problem and normalize
-    prob = setup_mpp(mpQP;fix_ids,fix_vals)
-    prob, Θ, tf = normalize_parameters(prob,Θ)
-    if(isnothing(prob)) # Θ makes the problem trivially infeasible
+    prob = (mpQP isa MPVI) ? deepcopy(mpQP) : setup_mpp(mpQP; fix_ids, fix_vals) # If the problem was already provided as a mpVI, do nothing, otherwise construct all the quantities
+    prob, Θ, tf = normalize_parameters(prob, Θ)
+    if (isnothing(prob)) # Θ makes the problem trivially infeasible
         @warn "The parameter region of interest is empty"
-        F,info = CriticalRegion[], (solve_time = 0, nCR = 0, nLPs = 0, nExplored = 0,status=:EmptyParameterRegion)
+        F, info = CriticalRegion[], (solve_time=0, nCR=0, nLPs=0, nExplored=0, status=:EmptyParameterRegion)
     end
 
     # Unconstrained case
-    if(length(prob.norm_factors) == 0)
+    if (length(prob.norm_factors) == 0)
         if prob isa MPQP # unconstrained + singular => unbounded
-            F,info = CriticalRegion[], (solve_time = 0, nCR = 0, nLPs = 0, nExplored = 0,status=:Unbounded)
+            F, info = CriticalRegion[], (solve_time=0, nCR=0, nLPs=0, nExplored=0, status=:Unbounded)
         else
             nth = prob.n_theta
-            if(!isempty(Θ.ub))
-                A,b = [I(nth) -I(nth) Θ.A], [Θ.ub; -Θ.lb; Θ.b]
+            if (!isempty(Θ.ub))
+                A, b = [I(nth) -I(nth) Θ.A], [Θ.ub; -Θ.lb; Θ.b]
             else
-                A,b =copy(Θ.A),copy(Θ.b)
+                A, b = copy(Θ.A), copy(Θ.b)
             end
-            F = CriticalRegion[CriticalRegion(Int[],A,b,prob.RinvV,zeros(nth+1,0),zeros(nth))]
-            info = (solve_time = 0, nCR = 0, nLPs = 0, nExplored = 0, status=:Solved)
+            F = CriticalRegion[CriticalRegion(Int[], A, b, prob.RinvV, zeros(nth + 1, 0), zeros(nth))]
+            info = (solve_time=0, nCR=0, nLPs=0, nExplored=0, status=:Solved)
         end
-        return Solution(prob,F,tf.scaling,tf.center,opts,info.status), info
+        return Solution(prob, F, tf.scaling, tf.center, opts, info.status), info
     end
 
     # Compute AS0 and start
-    if(isnothing(AS0))
-        AS0 = compute_AS0(prob,Θ)
+    if (isnothing(AS0))
+        AS0 = compute_AS0(prob, Θ)
     end
-    if(isnothing(AS0))
-        F,info = CriticalRegion[], (solve_time = 0, nCR = 0, nLPs = 0, nExplored = 0,status=:NoFeasibleParameter)
+    if (isnothing(AS0))
+        F, info = CriticalRegion[], (solve_time=0, nCR=0, nLPs=0, nExplored=0, status=:NoFeasibleParameter)
     else # Where the magic happens
-        F,info = mpdaqp_explicit(prob,Θ,AS0;opts)
+        F, info = mpdaqp_explicit(prob, Θ, AS0; opts)
     end
-    return Solution(prob,F,tf.scaling,tf.center,opts,info.status), info
+    return Solution(prob, F, tf.scaling, tf.center, opts, info.status), info
 end
 ## Method based on combinatorial adjacency 
-function mpdaqp_explicit(prob,Θ,AS0;opts = Settings())
-    time_limit = opts.time_limit*1e9;
+function mpdaqp_explicit(prob, Θ, AS0; opts=Settings())
+    time_limit = opts.time_limit * 1e9
     status = :Solved
-    t0  = time_ns()
-    m = length(prob.norm_factors);
+    t0 = time_ns()
+    m = length(prob.norm_factors)
 
     # Handle zero rows
     id_cands = findall(prob.norm_factors .> opts.eps_zero)
-    if(length(id_cands) < m)
+    if (length(id_cands) < m)
         id_zeros = findall(prob.norm_factors .≤ opts.eps_zero)
-        opts.verbose >  0 && @warn "Rows $id_zeros in A are zero → seen as parameter constraints" 
-        if hasproperty(Θ,:A)
-            A = [Θ.A -prob.d[1:end-1,id_zeros]]
-            b = [Θ.b; prob.d[end,id_zeros]]
+        opts.verbose > 0 && @warn "Rows $id_zeros in A are zero → seen as parameter constraints"
+        if hasproperty(Θ, :A)
+            A = [Θ.A -prob.d[1:end-1, id_zeros]]
+            b = [Θ.b; prob.d[end, id_zeros]]
         else
-            A = -prob.d[1:end-1,id_zeros]
-            b = prob.d[end,id_zeros]
+            A = -prob.d[1:end-1, id_zeros]
+            b = prob.d[end, id_zeros]
         end
-        Θ = (A= A, b = b,lb = Θ.lb, ub = Θ.ub) 
+        Θ = (A=A, b=b, lb=Θ.lb, ub=Θ.ub)
     end
 
-    setdiff!(id_cands,prob.eq_ids) # equality constraints cannot be modified
+    setdiff!(id_cands, prob.eq_ids) # equality constraints cannot be modified
 
     # Initialize
-    ws=setup_workspace(Θ,m;opts);
-    as0 = as2uint(AS0,eltype(ws.S))
-    push!(ws.S,as0)
-    push!(ws.explored,as0)
+    ws = setup_workspace(Θ, m; opts)
+    as0 = as2uint(AS0, eltype(ws.S))
+    push!(ws.S, as0)
+    push!(ws.explored, as0)
     j = 0
 
 
     # Start exploration 
-    while(!isempty(ws.S) || !isempty(ws.Sdown) || !isempty(ws.Sup))
+    while (!isempty(ws.S) || !isempty(ws.Sdown) || !isempty(ws.Sup))
 
         # Check time limit 
-        if(time_ns()-t0 > time_limit)
+        if (time_ns() - t0 > time_limit)
             status = :TimeLimitReached
             break
         end
-        if(length(ws.F) > opts.region_limit)
+        if (length(ws.F) > opts.region_limit)
             status = :RegionLimitReached
             break
         end
 
-        while(length(ws.S) < opts.chunk_size && !isempty(ws.Sdown)) # First try to move down...
-            explore_supersets(pop!(ws.Sdown),ws,id_cands,ws.S,prob.bounds_table)
+        while (length(ws.S) < opts.chunk_size && !isempty(ws.Sdown)) # First try to move down...
+            explore_supersets(pop!(ws.Sdown), ws, id_cands, ws.S, prob.bounds_table)
         end
-        while(length(ws.S) < opts.chunk_size && !isempty(ws.Sup)) # ... then try to move up
-            explore_subsets(pop!(ws.Sup),ws,id_cands,ws.S)
+        while (length(ws.S) < opts.chunk_size && !isempty(ws.Sup)) # ... then try to move up
+            explore_subsets(pop!(ws.Sup), ws, id_cands, ws.S)
         end
 
-        opts.verbose>0 && print_ws(ws,(j+=1))
+        opts.verbose > 0 && print_ws(ws, (j += 1))
 
         # Process pending AS
-        while(!isempty(ws.S))
-            as = pop!(ws.S);
-            region,up,down= isoptimal(as,ws,prob,opts)
-            !isnothing(region) && push!(ws.F,region)
-            up && push!(ws.Sup,as)
-            down && push!(ws.Sdown,as)
+        while (!isempty(ws.S))
+            as = pop!(ws.S)
+            region, up, down = isoptimal(as, ws, prob, opts)
+            !isnothing(region) && push!(ws.F, region)
+            up && push!(ws.Sup, as)
+            down && push!(ws.Sdown, as)
         end
 
     end
     # Exploration completed, cleanup 
     DAQPBase.free_c_workspace(ws.DAQP_workspace)
-    solve_time = (time_ns()-t0)/1e9
-    opts.verbose>0 && print_final(ws)
-    return ws.F, (solve_time = solve_time, nCR = length(ws.F), 
-                  nLPs = ws.nLPs, nExplored = length(ws.explored),
-                  status=status)
+    solve_time = (time_ns() - t0) / 1e9
+    opts.verbose > 0 && print_final(ws)
+    return ws.F, (solve_time=solve_time, nCR=length(ws.F),
+        nLPs=ws.nLPs, nExplored=length(ws.explored),
+        status=status)
 end
 ## Check if optimal
-function isoptimal(as,ws,prob,opts)
+function isoptimal(as, ws, prob, opts)
     # Extract AS and IS for current candidate
-    uint2as(as,ws,prob.bounds_table)
-    ws.nAS > prob.n  && return nothing,true,false # LICQ trivially broken
+    uint2as(as, ws, prob.bounds_table)
+    ws.nAS > prob.n && return nothing, true, false # LICQ trivially broken
 
     # Compute λ and μ 
-    up, down = compute_λ_and_μ(ws,prob,opts)
-    (up || down) && return nothing,up,down # Degeneracy
+    up, down = compute_λ_and_μ(ws, prob, opts)
+    (up || down) && return nothing, up, down # Degeneracy
 
     # Reset feasibility workspace
-    reset_workspace(ws) 
+    reset_workspace(ws)
     # Solve primal+dual feasibility problem 
-    normalize_model(ws;eps_zero=opts.eps_zero) || return nothing,false,false;
+    normalize_model(ws; eps_zero=opts.eps_zero) || return nothing, false, false
     # Make sure that dual variables for equality constraints are free
-    ws.sense[prob.eq_ids .+ ws.m0] .= 4
+    ws.sense[prob.eq_ids.+ws.m0] .= 4
 
 
-    ws.nLPs+=1
+    ws.nLPs += 1
     if isfeasible(ws.DAQP_workspace, ws.m, 0)
-        return extract_CR(ws,prob),true,ws.nAS ≤ prob.n
+        return extract_CR(ws, prob), true, ws.nAS ≤ prob.n
     else
-        return nothing,false,false
+        return nothing, false, false
     end
 end
 ## Update optimization model
-function normalize_model(ws;eps_zero=1e-12)
-    norm_factor=0.0;
+function normalize_model(ws; eps_zero=1e-12)
+    norm_factor = 0.0
     # add λ ≥ 0 to feasibility model
-    for i in (1+ws.m0: ws.m0+length(ws.AS))
-        norm_factor = norm(view(ws.Ath,:,i),2);
+    for i in (1+ws.m0:ws.m0+length(ws.AS))
+        norm_factor = norm(view(ws.Ath, :, i), 2)
         ws.norm_factors[i-ws.m0] = norm_factor
-        if(norm_factor>eps_zero)
-            rdiv!(view(ws.Ath,:,i),norm_factor)
-            ws.bth[i]/=norm_factor
+        if (norm_factor > eps_zero)
+            rdiv!(view(ws.Ath, :, i), norm_factor)
+            ws.bth[i] /= norm_factor
             ws.sense[i] = 0
         else
-            (ws.bth[i]<-eps_zero) && return false # trivially infeasible 
-            ws.sense[i] = 4 
+            (ws.bth[i] < -eps_zero) && return false # trivially infeasible 
+            ws.sense[i] = 4
         end
     end
-    ws.m=length(ws.AS)+ws.m0;
+    ws.m = length(ws.AS) + ws.m0
     return true
 end
 ## Compute slacks 
-function compute_λ_and_μ(ws,prob::MPLDP,opts)
-    if(opts.factorization == :qr)
-        R = (ws.nAS > 0) ? UpperTriangular(qr(prob.M[ws.AS,:]').R) : UpperTriangular(zeros(0,0))
-        if(any(abs(R[i,i]) <1e-12 for i in 1:ws.nAS))
-            return true,false
+function compute_λ_and_μ(ws, prob::MPLDP, opts)
+    if (opts.factorization == :qr)
+        R = (ws.nAS > 0) ? UpperTriangular(qr(prob.M[ws.AS, :]').R) : UpperTriangular(zeros(0, 0))
+        if (any(abs(R[i, i]) < 1e-12 for i in 1:ws.nAS))
+            return true, false
         end
     else
-        C = cholesky(prob.MM[ws.AS,ws.AS],check=false)
-        if(!issuccess(C))
+        C = cholesky(prob.MM[ws.AS, ws.AS], check=false)
+        if (!issuccess(C))
             return true, false
         end
         R = UpperTriangular(C.factors)
     end
 
     # Compute λ
-    λTH = @view ws.Ath[:,ws.m0+1:ws.m0+ws.nAS]
+    λTH = @view ws.Ath[:, ws.m0+1:ws.m0+ws.nAS]
     λC = @view ws.bth[ws.m0+1:ws.m0+ws.nAS]
-    λTH .= @view prob.d[1:end-1,ws.AS]; rdiv!(rdiv!(λTH, R), adjoint(R))
-    λC .= -@view prob.d[end,ws.AS]; ldiv!(R, ldiv!(adjoint(R), λC))
+    λTH .= @view prob.d[1:end-1, ws.AS]
+    rdiv!(rdiv!(λTH, R), adjoint(R))
+    λC .= -@view prob.d[end, ws.AS]
+    ldiv!(R, ldiv!(adjoint(R), λC))
     # Compute μ
-    μTH = @view ws.Ath[:,ws.m0+ws.nAS+1:end]
+    μTH = @view ws.Ath[:, ws.m0+ws.nAS+1:end]
     μC = @view ws.bth[ws.m0+ws.nAS+1:end]
-    MMAI = prob.MM[ws.AS,ws.IS]
-    μTH .= @view prob.d[1:end-1,ws.IS]; mul!(μTH,λTH,MMAI,1,-1)
-    μC .=  @view prob.d[end,ws.IS]; mul!(μC,MMAI',λC,1,1)
+    MMAI = prob.MM[ws.AS, ws.IS]
+    μTH .= @view prob.d[1:end-1, ws.IS]
+    mul!(μTH, λTH, MMAI, 1, -1)
+    μC .= @view prob.d[end, ws.IS]
+    mul!(μC, MMAI', λC, 1, 1)
     return false, false
 end
 
-function compute_λ_and_μ(ws,prob::MPQP,opts)
-    ws.nAS < prob.rank_defficiency && return false,true  # Trivially degenerate
+function compute_λ_and_μ(ws, prob::MPQP, opts)
+    ws.nAS < prob.rank_defficiency && return false, true  # Trivially degenerate
 
-    Q,R = qr(prob.A[ws.AS,:]')
-    if(size(R,1) < ws.nAS || any(abs(R[i,i]) <1e-12 for i in 1:ws.nAS))
+    Q, R = qr(prob.A[ws.AS, :]')
+    if (size(R, 1) < ws.nAS || any(abs(R[i, i]) < 1e-12 for i in 1:ws.nAS))
         return true, false # LICQ broken -> explore up, do not explore down
     end
     R = UpperTriangular(R)
     Q *= 1.0 # (to get explicit representation of Q) TODO: do inplace with lmul!
-    Y,Z = Q[:,1:ws.nAS], Q[:,ws.nAS+1:end]
+    Y, Z = Q[:, 1:ws.nAS], Q[:, ws.nAS+1:end]
 
-    Hr = Z'*prob.H*Z
-    C = cholesky(Hr,check=false)
-    if(!issuccess(C))
-        return false,true# do not explore up, explore down
+    Hr = Z' * prob.H * Z
+    C = cholesky(Hr, check=false)
+    if (!issuccess(C))
+        return false, true# do not explore up, explore down
     end
     Rh = UpperTriangular(C.factors)
 
-    xy = prob.B[:,ws.AS]/R
-    xz = -(xy*Y'*prob.H+prob.F)*Z; rdiv!(rdiv!(xz, Rh), adjoint(Rh))
-    x = xy*Y'+xz*Z'
-    rhs = (x*prob.H+prob.F)*Y
+    xy = prob.B[:, ws.AS] / R
+    xz = -(xy * Y' * prob.H + prob.F) * Z
+    rdiv!(rdiv!(xz, Rh), adjoint(Rh))
+    x = xy * Y' + xz * Z'
+    rhs = (x * prob.H + prob.F) * Y
 
-    λTH = @view ws.Ath[:,ws.m0+1:ws.m0+ws.nAS]
+    λTH = @view ws.Ath[:, ws.m0+1:ws.m0+ws.nAS]
     λC = @view ws.bth[ws.m0+1:ws.m0+ws.nAS]
-    λTH .= @view rhs[1:end-1,:]; rdiv!(λTH, adjoint(R))
-    λC .= -@view rhs[end,:]; ldiv!(R, λC)
+    λTH .= @view rhs[1:end-1, :]
+    rdiv!(λTH, adjoint(R))
+    λC .= -@view rhs[end, :]
+    ldiv!(R, λC)
 
-    μTH = @view ws.Ath[:,ws.m0+ws.nAS+1:end]
+    μTH = @view ws.Ath[:, ws.m0+ws.nAS+1:end]
     μC = @view ws.bth[ws.m0+ws.nAS+1:end]
-    AIt = prob.A[ws.IS,:]
-    μTH .= @view prob.B[1:end-1,ws.IS]; mul!(μTH,view(x,1:prob.n_theta,:),AIt',1,-1)
-    μC .=  @view prob.B[end,ws.IS]; mul!(μC,AIt,x[end,:],-1,1)
+    AIt = prob.A[ws.IS, :]
+    μTH .= @view prob.B[1:end-1, ws.IS]
+    mul!(μTH, view(x, 1:prob.n_theta, :), AIt', 1, -1)
+    μC .= @view prob.B[end, ws.IS]
+    mul!(μC, AIt, x[end, :], -1, 1)
 
     ws.x = x # Save x for later
 
-    return false,false
+    return false, false
 end
+
+function compute_λ_and_μ(ws, prob::MPVI, opts)
+    # If there is no degeneracy returns (false, false) - which is then ignored
+    # Otherwise, returns true if one should explore up (first output) or down (second output)
+    Q, R = qr(prob.A[ws.AS, :]')
+    if (size(R, 1) < ws.nAS || any(abs(R[i, i]) < 1e-7 for i in 1:ws.nAS))
+        return true, false # LICQ broken -> explore only subsets
+    end
+
+    # Calculation of multipliers of active constraints:
+    # λₐ = -(AₐH⁻¹Aₐ')⁻¹(AₐH⁻¹F + Bₐ)θ - (AₐH⁻¹Aₐ')⁻¹(AₐH⁻¹f + bₐ)
+    # where subscript a denotes restriction to active set rows.
+    # Critical region constraint 1:
+    # λ ≥ 0
+    # Write as:
+    # (-1) * λTH * θ + λC ≥ 0 
+    # where: λTH = (AₐH⁻¹Aₐ')⁻¹(AₐH⁻¹F + Bₐ);  λC = -(AₐH⁻¹Aₐ')⁻¹(AₐH⁻¹f + bₐ)
+    # Write as a polyhedron:
+    # Ath * θ ≤ bth
+    # where Ath = λTH; bth = λC
+    λTH = @view ws.Ath[:, ws.m0+1:ws.m0+ws.nAS]
+    λC = @view ws.bth[ws.m0+1:ws.m0+ws.nAS]
+    λTH .= prob.B[1:end-1, ws.AS]
+    F = @view prob.F[1:end-1, :]
+    F = F'
+    f = @view prob.F[end, :]
+    b = @view prob.B[end, ws.AS]
+    A_active_set = @view prob.A[ws.AS, :]
+    AHinv_active = @view prob.AHinv[ws.AS, :]
+    AHinv_inactive = @view prob.AHinv[ws.IS, :]
+    AHinvA_active = @view prob.AHinvA[ws.AS, ws.AS]
+    AHinvA_inactive = @view prob.AHinvA[ws.IS, ws.AS]
+    mul!(λTH, F', AHinv_active', 1.0, 1.0)  # λTH = λTH + F' * AHinv'
+
+    try
+        rdiv!(λTH, lu(AHinvA_active')) # This modifies ws.Ath[:,ws.m0+1:ws.m0+ws.nAS] 
+    catch err
+        return true, false # LICQ broken -> explore only subsets
+    end
+
+    # Assigns  λC = - AH⁻¹A[ws.AS] \ (AH⁻¹[ws.AS, :] * f + b)
+    λC .= b
+    mul!(λC, AHinv_active, f, -1., -1.)
+    # λC .= AHinvA_active \ λC
+    try
+        ldiv!(lu(AHinvA_active), λC)
+    catch e
+        @warn "Error in ldiv!(lu(AHinvA_active), λC): $e"
+        return true, false # LICQ broken -> explore only subsets
+    end
+    # x* = -H⁻¹(Fθ + f + Aₐ'λₐ)
+    # Substitute the previous quantities:: x* = -H⁻¹( (F - Aₐ'λTH) * θ + f + Aₐ'λC)
+
+    # x* = -H⁻¹(Fθ + f + Aₐ'λₐ)
+    # Re-using the previous quantities we get: x* = -H⁻¹( (F - Aₐ'λTH) * θ + f + Aₐ'λC)
+    # Quantities are stored such that [θ;1]' * ws.x = x*
+    # Size of ws.x: nθ+1, nx
+    if isempty(ws.x)
+        ws.x = zeros(size(prob.F)...) # allocate ws.x once. Note: prob.F = [F'; f']
+    end
+    ws.x = ([λTH; -λC'] * prob.A[ws.AS, :] - prob.F) / prob.H' #size: nθ+1, nx #TODO: make more efficient
+
+    # Compute μ (slack of inactive inequality constraints)
+    # by definition:
+    # μ = Bᵢ * θ + bᵢ - Aᵢ x*
+    # where subscript i denotes restriction to inactive set rows.
+    # Substituting x* = -H⁻¹(Fθ + f + Aₐ'λₐ)
+    # Critical region constraint 1:
+    # μ ≥ 0
+    # Write as polyhedron:
+    # Aᵢth * θ <= bᵢth
+    # Where 
+    # Aᵢth = -( Bᵢ + AᵢH⁻¹F + (-1) * AᵢH⁻¹Aₐ'λTH)
+    # bᵢth = bᵢ + AᵢH⁻¹f + AᵢH⁻¹Aₐ'λC
+    # and λTH, λC are computed earlier
+    μTH = @view ws.Ath[:, ws.m0+ws.nAS+1:end]
+    μC = @view ws.bth[ws.m0+ws.nAS+1:end]
+    # Assigns ws.Ath[:,ws.m0+ws.nAS+1:end] 
+    μTH .= @view prob.B[1:end-1, ws.IS] # note: prob.B = [B', b']
+    mul!(μTH, F', AHinv_inactive', 1., 1.) #Partial result: = B' + F'(AH⁻¹)'
+    mul!(μTH, λTH, AHinvA_inactive', 1., -1.) # Result: = - (B' + F'(AᵢH⁻¹)') + λTH AᵢH⁻¹Aₐ'
+    # Assigns ws.bth[ws.m0+ws.nAS+1:end] 
+    μC .= @view prob.B[end, ws.IS]
+    mul!(μC, AHinv_inactive, f, 1., 1.)
+    mul!(μC, AHinvA_inactive, λC, 1., 1.)
+    return false, false
+end
+
 ## Explore subsets 
-function explore_subsets(as,ws,id_cands,S)
+function explore_subsets(as, ws, id_cands, S)
     UIntX = typeof(as)
     for i in id_cands
-        mask = UIntX(1)<<(i-1)
-        as&mask ==  0 && continue
-        as_new = as&~mask
+        mask = UIntX(1) << (i - 1)
+        as & mask == 0 && continue
+        as_new = as & ~mask
         if as_new ∉ ws.explored
-            push!(ws.explored,as_new) # Mark as explored
-            push!(S,as_new)
+            push!(ws.explored, as_new) # Mark as explored
+            push!(S, as_new)
         end
     end
 end
 ## Explore supersets 
-function explore_supersets(as,ws,id_cands,S,bounds_table)
+function explore_supersets(as, ws, id_cands, S, bounds_table)
     UIntX = typeof(as)
     for i in id_cands
-        mask = UIntX(1)<<(i-1);
-        as&(mask|(UIntX(1)<<(bounds_table[i]-1))) != 0 && continue
+        mask = UIntX(1) << (i - 1)
+        as & (mask | (UIntX(1) << (bounds_table[i] - 1))) != 0 && continue
         #as&mask != 0 && continue
-        as_new = as|mask
+        as_new = as | mask
         if as_new ∉ ws.explored
-            push!(ws.explored,as_new) # Mark as explored
-            push!(S,as_new) # Put on stack
+            push!(ws.explored, as_new) # Mark as explored
+            push!(S, as_new) # Put on stack
         end
     end
 end
