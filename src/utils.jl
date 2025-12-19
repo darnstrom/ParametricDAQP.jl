@@ -86,7 +86,7 @@ function normalize_parameters(prob::MPLDP,Θ;eps_zero=1e-12)
     Θ =(A=A, b=b, lb=-ones(nth), ub=ones(nth));
     return prob, Θ,(center=center, scaling = 1 ./ norm_factors)
 end
-function normalize_parameters(prob::MPQP,Θ)
+function normalize_parameters(prob::Union{MPQP,MPVI},Θ)
     if(isempty(Θ.ub)) # assume already normalized
         return prob,Θ,(center=0,scaling = 1)
     end
@@ -105,27 +105,6 @@ function normalize_parameters(prob::MPQP,Θ)
     A,b = normalize_region(Ath,bth,norm_factors,center)
     Θ =(A=A,b=b, lb = -ones(nth), ub = ones(nth));
     return prob, Θ,(center=center, scaling = 1 ./ norm_factors)
-end
-function normalize_parameters(prob::MPVI, Θ)
-    if (isempty(Θ.ub)) # assume already normalized
-        nth = size(Θ.A, 1)
-        return prob, Θ, (center=zeros(nth), scaling=ones(nth))
-    end
-    nth = length(Θ.lb)
-    center = (Θ.lb + Θ.ub) / 2
-    norm_factors = (Θ.ub - Θ.lb) / 2
-    prob.B[end:end, :] += center' * prob.B[1:end-1, :]
-    prob.F[end:end, :] += center' * prob.F[1:end-1, :]
-    for i in 1:nth
-        prob.B[i, :] *= norm_factors[i]
-        prob.F[i, :] *= norm_factors[i]
-    end
-
-    Ath = haskey(Θ, :A) ? Θ.A : zeros(nth, 0)
-    bth = haskey(Θ, :b) ? Θ.b : zeros(0)
-    Θ = (A=norm_factors .* Ath, b=bth - (center'*Ath)[:], # TODO: verify
-        lb=-ones(nth), ub=ones(nth))
-    return prob, Θ, (center=center, scaling=1 ./ norm_factors)
 end
 function normalize_region(Ath,bth,norm_factors,center; eps_zero=1e-12)
     # Normalize A to box -1 ≤ θ ≤ 1
