@@ -25,7 +25,7 @@ function mpsolve(mpQP,Θ;opts=nothing, AS0 = nothing) # bounds_table as option
     end
 
     # Setup parametric problem and normalize
-    prob = (mpQP isa MPVI) ? deepcopy(mpQP) : setup_mpp(mpQP; fix_ids, fix_vals) # If the problem was already provided as a mpVI, do nothing, otherwise construct all the quantities
+    prob =  setup_mpp(mpQP; fix_ids, fix_vals)
     prob, Θ, tf = normalize_parameters(prob,Θ)
     if(isnothing(prob)) # Θ makes the problem trivially infeasible
         @warn "The parameter region of interest is empty"

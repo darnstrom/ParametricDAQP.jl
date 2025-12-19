@@ -1,46 +1,58 @@
-## Setup MPLDP from MPQP
-function setup_mpp(mpQP;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
-    if hasproperty(mpQP,:f_theta)
-        f_theta = mpQP.f_theta 
-    elseif hasproperty(mpQP,:F)
-        f_theta = mpQP.F
+## Setup MPLDP, MPQP or MPVI
+function setup_mpp(mpp;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
+    # If already setup, just return
+    typeof(mpp) <: Union{MPLDP,MPQP,MPVI} && return deepcopy(mpp)
+
+    if hasproperty(mpp,:f_theta)
+        f_theta = mpp.f_theta 
+    elseif hasproperty(mpp,:F)
+        f_theta = mpp.F
     end
 
-    if hasproperty(mpQP,:W)
-        W = mpQP.W
-    elseif hasproperty(mpQP,:B)
-        W = mpQP.B
+    if hasproperty(mpp,:W)
+        W = mpp.W
+    elseif hasproperty(mpp,:B)
+        W = mpp.B
     end
 
-    eq_ids = hasproperty(mpQP,:eq_ids) && !isnothing(mpQP.eq_ids) ? mpQP.eq_ids : Int[]
-    if hasproperty(mpQP,:sense)
-        eq_ids = eq_ids ∪ findall(mpQP.sense.&DAQPBase.EQUALITY.!=0)
-    elseif hasproperty(mpQP,:senses)
-        eq_ids = eq_ids ∪ findall(mpQP.senses.&DAQPBase.EQUALITY.!=0)
+    eq_ids = hasproperty(mpp,:eq_ids) && !isnothing(mpp.eq_ids) ? mpp.eq_ids : Int[]
+    if hasproperty(mpp,:sense)
+        eq_ids = eq_ids ∪ findall(mpp.sense.&DAQPBase.EQUALITY.!=0)
+    elseif hasproperty(mpp,:senses)
+        eq_ids = eq_ids ∪ findall(mpp.senses.&DAQPBase.EQUALITY.!=0)
     end
 
     n, nth = size(f_theta) 
-    m = length(mpQP.b)
+    m = length(mpp.b)
 
-    bnd_tbl = (haskey(mpQP,:bounds_table) && !isnothing(mpQP.bounds_table)) ? mpQP.bounds_table : collect(1:m)
-    out_inds = haskey(mpQP,:out_inds) && !isnothing(mpQP.out_inds) ? mpQP.out_inds : collect(1:n)
+    bnd_tbl = (haskey(mpp,:bounds_table) && !isnothing(mpp.bounds_table)) ? mpp.bounds_table : collect(1:m)
+    out_inds = haskey(mpp,:out_inds) && !isnothing(mpp.out_inds) ? mpp.out_inds : collect(1:n)
 
-    zlims =  get_lims(mpQP.A,mpQP.b,W,out_inds)
+    zlims =  get_lims(mpp.A,mpp.b,W,out_inds)
 
 
     free_ids = setdiff(1:nth,fix_ids)
     nth = length(free_ids) 
 
-    F = [f_theta[:,free_ids] mpQP.f+f_theta[:,fix_ids]*fix_vals]
-    B = [W[:,free_ids] mpQP.b+W[:,fix_ids]*fix_vals]
+    F = [f_theta[:,free_ids] mpp.f+f_theta[:,fix_ids]*fix_vals]
+    B = [W[:,free_ids] mpp.b+W[:,fix_ids]*fix_vals]
 
-    H = (mpQP.H+mpQP.H')/2
-    R = cholesky(H, check=false)
-    if(!issuccess(R)) # Cannot formulate as an LDP => return MPQP
-        return MPQP(H,Matrix(F'),mpQP.A,Matrix(B'),nth,n,bnd_tbl,ones(m),eq_ids,n-rank(H),out_inds,zlims)
+    # If H not symmetric => MPVI
+    if(!isapprox(mpp.H, mpp.H', rtol=1e-9))
+        AHinv = mpp.A / mpp.H
+        AHinvA = AHinv * mpp.A'
+        return MPVI(mpp.H, Matrix(F'),mpp.A, Matrix(B'),AHinv,AHinvA,nth,n,bnd_tbl,ones(m),eq_ids,out_inds,zlims)
     end
 
-    M = mpQP.A/R.U
+    # H is symmetric -> Either MPQP or MPLDP
+    H = (mpp.H+mpp.H')/2
+    R = cholesky(H, check=false)
+    if(!issuccess(R)) # Cannot formulate as an LDP => return MPQP
+        return MPQP(H,Matrix(F'),mpp.A,Matrix(B'),nth,n,bnd_tbl,ones(m),eq_ids,n-rank(H),out_inds,zlims)
+    end
+
+    # H is symmetric + positive definite => return MPLDP
+    M = mpp.A/R.U
     V = (R.L)\F
     d = Matrix((B + M*V)')# Col. major...
 

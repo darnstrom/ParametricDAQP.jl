@@ -48,6 +48,8 @@ struct MPVI
     bounds_table::Vector{Int64}
     norm_factors::Vector{Float64}
     eq_ids::Vector{Int64} # introduced for compatibility reasons - only inequalities are considered in the VI case
+    out_inds::Vector{Int64}
+    out_lims::Matrix{Float64}
 end
 
 """
@@ -71,50 +73,20 @@ Constructs an `MPVI` (Multi-Parametric Variational Inequality) problem instance.
 - `b::AbstractVector{Float64}`: Vector for the constant part of the constraint right-hand side.
 
 # Returns
-- An `MPVI` object containing the problem data and precomputed matrices for efficient solution.
+- An `MPVI`  if H is nonsymmetric
+- An 'MPQP'  if H is symmetric and singular
+- An 'MPLDP' if H is symmetric and nonsingular 
 
-# Throws
-- `ArgumentError` if the input matrices and vectors do not have compatible dimensions.
-- `ArgumentError` if `H + H'` is not positive definite.
 """
 function MPVI(
-    H::AbstractMatrix{Float64},
-    G::AbstractMatrix{Float64},
-    f::AbstractVector{Float64},
-    A::AbstractMatrix{Float64},
-    E::AbstractMatrix{Float64},
-    b::AbstractVector{Float64}
-)
-    n_theta = size(G, 2)
-    n = size(H, 1)
-    m = size(A, 1)  # Number of constraints
-
-    # Sanity checks
-    @assert size(A, 2) == n "[MPVI constructor] Columns of A must equal number of decision variables"
-    @assert size(E, 1) == m "[MPVI constructor] Rows of E must match rows of A"
-    @assert length(b) == m "[MPVI constructor] Length of b must match rows of A"
-
-    @assert size(G, 1) == n "[MPVI constructor] Rows of G must equal number of decision variables"
-    @assert size(H, 2) == n "[MPVI constructor] H must be square"
-
-    @assert length(f) == n "[MPVI constructor] Length of f must match number of decision variables"
-
-    # Ensure H is square and positive definite
-    @assert size(H, 1) == size(H, 2) "[MPVI constructor] H must be square"
-    try
-        cholesky(H + H')
-    catch
-        throw(ArgumentError("[MPVI constructor] H + H' must be positive definite"))
-    end
-
-    AHinv = A / H
-    AHinvA = AHinv * A'
-
-    norm_factors = ones(m)
-    bounds_table = collect(1:m)
-    eq_ids = Int64[]
-
-    return MPVI(H, [G'; f'], A, [E'; b'], AHinv, AHinvA, n_theta, n, bounds_table, norm_factors, eq_ids)
+        H::AbstractMatrix{Float64},
+        G::AbstractMatrix{Float64},
+        f::AbstractVector{Float64},
+        A::AbstractMatrix{Float64},
+        E::AbstractMatrix{Float64},
+        b::AbstractVector{Float64}
+    )
+    return setup_mpp((H=H,F=G,f=f,A=A,B=E,b=b))
 end
 
 Base.@kwdef mutable struct Settings 
