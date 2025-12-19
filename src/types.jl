@@ -1,4 +1,4 @@
-mutable struct CriticalRegion
+mutable struct CriticalRegion 
     AS::Vector{Int16}
     Ath::Matrix{Float64}
     bth::Vector{Float64}
@@ -7,7 +7,7 @@ mutable struct CriticalRegion
     th::Vector{Float64}
 end
 
-struct MPLDP
+struct MPLDP 
     MM::Matrix{Float64}
     M::Matrix{Float64}
     MRt::Matrix{Float64}
@@ -34,7 +34,6 @@ struct MPQP
     out_inds::Vector{Int64}
     out_lims::Matrix{Float64}
 end
-
 struct MPVI
     # VI(Hx + Fθ + f, Ax <= Bθ + b)
     # where f, b are the last rows of F,B, respect.
@@ -118,9 +117,9 @@ function MPVI(
     return MPVI(H, [G'; f'], A, [E'; b'], AHinv, AHinvA, n_theta, n, bounds_table, norm_factors, eq_ids)
 end
 
-Base.@kwdef mutable struct Settings
+Base.@kwdef mutable struct Settings 
     eps_zero::Float64 = 1e-12
-    verbose::Int64 = 1
+    verbose::Int64 = 1 
     store_AS::Bool = true
     store_points::Bool = true
     store_regions::Bool = true
@@ -128,7 +127,7 @@ Base.@kwdef mutable struct Settings
     remove_redundant::Bool = true
     time_limit::Int64 = 1e5
     region_limit::Int64 = 1e12
-    chunk_size::Int64 = 1e3
+    chunk_size::Int64 = 1e3 
     factorization::Symbol = :chol
     postcheck_rank::Bool = true
     lowdim_tol::Float64 = 1e-12
@@ -139,7 +138,7 @@ Settings(opts::Nothing) = Settings()
 Settings(opts::Settings) = opts
 function Settings(opts::AbstractDict)
     out = Settings()
-    for (key, value) in opts
+    for (key,value) in opts
         if hasproperty(out, Symbol(key))
             setproperty!(out, Symbol(key), value)
         else
@@ -155,7 +154,7 @@ mutable struct Workspace{T<:Integer}
     bth_lower::Vector{Float64}
     sense::Vector{Cint}
     m::Int64
-    m0::Int64
+    m0::Int64 
     DAQP_workspace::Ptr{DAQPBase.Workspace}
     ASs::BitMatrix
     nLPs::Int64
@@ -168,14 +167,14 @@ mutable struct Workspace{T<:Integer}
     IS::BitVector
     AS::BitVector
     nAS::Int64
-    norm_factors::Vector{Float64}
+    norm_factors:: Vector{Float64}
     x::Matrix{Float64}
 end
 
 struct Solution
     problem::Union{MPLDP,MPQP,MPVI}
     CRs::Vector{CriticalRegion}
-    scaling::Vector{Float64}
+    scaling::Vector{Float64} 
     translation::Vector{Float64}
     settings::Settings
     status::Symbol
