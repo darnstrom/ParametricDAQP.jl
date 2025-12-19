@@ -317,7 +317,7 @@ function extract_solution(AS,prob::MPLDP,ws)
     λ = ws.opts.store_dual ? λ : zeros(0,0)
     return x,λ
 end
-function extract_solution(AS,prob::MPQP,ws)
+function extract_solution(AS,prob::Union{MPQP,MPVI},ws)
     if ws.opts.store_dual
         λ = [ws.Ath[:,ws.m0+1:ws.m0+ws.nAS];-ws.bth[ws.m0+1:ws.m0+ws.nAS]']
     else
@@ -325,11 +325,6 @@ function extract_solution(AS,prob::MPQP,ws)
     end
     x = ws.x[:,prob.out_inds]
     return x,λ
-end
-function extract_solution(AS, prob::MPVI, ws)
-    λ = [ws.Ath[:, ws.m0+1:ws.m0+ws.nAS]; -ws.bth[ws.m0+1:ws.m0+ws.nAS]']
-    x = ws.x
-    return x, λ
 end
 ## Compute AS0 
 function compute_AS0(mpLDP::MPLDP,Θ)
