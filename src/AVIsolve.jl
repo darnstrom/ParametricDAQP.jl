@@ -12,15 +12,12 @@ function AVIsolve(
 
     # Solves VI(Hx +h, C) where C={x| Ax <= b}
     # Using Douglas-Rachford
-    n = size(M, 1)
-    m = size(A, 1)
-    eye = Matrix{Float64}(I, n, n)
-    H = eye
+    m,n = size(A)
     M1 = (M + M') / 4
     M2 = M1 + (M - M') / 2
-    M1plusH = M1 + H
-    M2minusH = M2 - H
-    M2plusH = lu(M2 + H)
+    M1plusH = M1 + I
+    M2minusH = M2 - I
+    M2plusH = lu!(M2 + I)
     if warmstart == NoWarmStart
         x = zeros(n)
     elseif warmstart == UnconstrainedSolution
@@ -29,18 +26,18 @@ function AVIsolve(
     # check for trivial infeasibility: A[i,:] = 0, b[i]<0 for some i
     zero_rows = findall(row -> norm(row) < tol, eachrow(A))
     for idx_row in zero_rows
-        if b[idx_row] < 0
-            return nothing, NaN, :Infeasible
-        end
+        b[idx_row] < 0 && return nothing, NaN, :Infeasible
     end
     # MAIN LOOP
-    M2x_plus_q = zeros(n)
-    y = zeros(n)
+    M2x_plus_q, y = zeros(n),zeros(n)
+    backstep = DAQPBase.Model()
+    DAQPBase.setup(backstep, M1plusH, M2x_plus_q, A, b, Float64[], zeros(Cint, m))
+    proj = DAQPBase.Model()
+    DAQPBase.setup(proj, Matrix{Float64}(I, n, n), -y, A, b,Float64[], zeros(Cint, m))
     for k in 1:max_iter
-        backstep = DAQPBase.Model()
         M2x_plus_q[:] = q
         mul!(M2x_plus_q, M2minusH, x, 1.0, 1.0)
-        DAQPBase.setup(backstep, M1plusH, M2x_plus_q, A, b, Float64[], zeros(Cint, m))
+        DAQPBase.update(backstep, nothing, M2x_plus_q, nothing, nothing,nothing)
         y[:], _, exitflag, _ = DAQPBase.solve(backstep)
         if exitflag < 0
             return nothing, NaN, :Infeasible # infeasible
@@ -55,8 +52,7 @@ function AVIsolve(
         # Compute residual
         if mod(k, 10) == 0
             y = x - (M * x + q)
-            proj = DAQPBase.Model()
-            DAQPBase.setup(proj, eye, -y, A, b, Float64[], zeros(Cint, m))
+            DAQPBase.update(proj, nothing, -y, nothing, nothing,nothing)
             x_transf, _, _, _ = DAQPBase.solve(proj)
             r = norm(x - x_transf)
             # println("[AVIsolve]: Iteration = $k; Residual = $r")

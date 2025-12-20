@@ -388,7 +388,7 @@ function compute_AS0(mpQP::MPVI, Θ)
     b_Θ = [Θ.b; Θ.ub; -Θ.lb]
     A_lifted = [-mpQP.B[1:end-1, :]' mpQP.A; A_Θ zeros(n_constr_Θ, nx)]
     B_lifted = [mpQP.B[end, :]; b_Θ]
-    x, _, exitflag, info = DAQPBase.quadprog(Matrix{Float64}(I(nth + nx)), zeros(nth + nx), A_lifted, B_lifted)
+    x, _, exitflag, info = DAQPBase.quadprog(zeros(0,0), zeros(0), A_lifted, B_lifted)
     if exitflag != 1
         @warn "[compute_AS0] There is no parameter in the parameter set that makes the problem feasible"
         return nothing
@@ -396,7 +396,6 @@ function compute_AS0(mpQP::MPVI, Θ)
     θ = x[1:mpQP.n_theta]
     # Solve problem for the given θ
     tol = 10^(-4)
-    println("[compute_AS0] Timing AVIsolve:")
     x, r, solved = AVIsolve(mpQP.H, mpQP.F' * [θ; 1], mpQP.A, mpQP.B' * [θ; 1], max_iter=10^6, stepsize=0.9, tol=10^(-5))
     (solved == :MaximumIterationsReached) && @warn "[compute_AS0] Using inaccurate AVI solution"
     active_set = findall(mpQP.A * x .>= mpQP.B' * [θ; 1] .- tol)
