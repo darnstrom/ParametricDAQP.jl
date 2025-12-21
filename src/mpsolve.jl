@@ -188,7 +188,7 @@ function compute_λ_and_μ(ws,prob::MPLDP,opts)
             L = U'
         end
     else
-        C = cholesky(prob.MM[ws.AS,ws.AS],check=false)
+        C = cholesky!(prob.MM[ws.AS,ws.AS],check=false)
         !issuccess(C) && return true, false
         U,L = C.U,C.L
     end
