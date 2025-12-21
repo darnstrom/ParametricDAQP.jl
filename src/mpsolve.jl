@@ -179,33 +179,40 @@ end
 ## Compute slacks 
 function compute_λ_and_μ(ws,prob::Union{MPLDP,MPVI},opts)
     if(prob isa MPVI)
-        luF = lu!(prob.AHinvA[ws.AS, ws.AS],NoPivot(),check=false)
+        luF = lu!(prob.AHinvA[ws.AS, ws.AS], false ? RowMaximum() : NoPivot(), check=false)
         !issuccess(luF) && return true, false # LICQ broken -> explore up, do not explore down
         U,L =  UpperTriangular(luF.U), LowerTriangular(luF.L)
+        p = false ? luF.p : Int[]
     elseif(opts.factorization == :qr)
         if(ws.nAS <= 0)
             U,L = UpperTriangular(zeros(0,0)),LowerTriangular(zeros(0,0))
+            p = Int[]
         else
-            qrF = qr!(prob.M[ws.AS,:]')
+            qrF = qr!(prob.M[ws.AS,:]',opts.pivot ? ColumnNorm() : NoPivot())
             U = UpperTriangular(qrF.R)
             any(abs(U[i,i]) <1e-12 for i in 1:ws.nAS) && return true,false
             L = U'
+            p = opts.pivot ? qrF.p : Int[]
         end
     else
-        C = cholesky!(prob.AHinvA[ws.AS,ws.AS],check=false)
+        C = cholesky!(prob.AHinvA[ws.AS,ws.AS], opts.pivot ? RowMaximum() : NoPivot(), check=false)
         !issuccess(C) && return true, false
         U,L = C.U,C.L
+        p = opts.pivot ? C.p : Int[]
     end
 
+    AS = findall(ws.AS)
+    opts.pivot && Base.permute!(AS,p)
+    ws.intAS = AS
     # Compute λ
     λTH = @view ws.Ath[:,ws.m0+1:ws.m0+ws.nAS]
     λC = @view ws.bth[ws.m0+1:ws.m0+ws.nAS]
-    λTH .= @view prob.d[1:end-1,ws.AS]; rdiv!(rdiv!(λTH, U), L)
-    λC .= -@view prob.d[end,ws.AS]; rdiv!(rdiv!(λC',U),L)
+    λTH .= @view prob.d[1:end-1,AS]; rdiv!(rdiv!(λTH, U), L)
+    λC .= -@view prob.d[end,AS]; rdiv!(rdiv!(λC',U),L)
     # Compute μ
     μTH = @view ws.Ath[:,ws.m0+ws.nAS+1:end]
     μC = @view ws.bth[ws.m0+ws.nAS+1:end]
-    AHinvA_AI = prob.AHinvA[ws.AS,ws.IS]
+    AHinvA_AI = prob.AHinvA[AS,ws.IS]
     μTH .= @view prob.d[1:end-1,ws.IS]; mul!(μTH,λTH,AHinvA_AI,1,-1)
     μC .=  @view prob.d[end,ws.IS]; mul!(μC',λC',AHinvA_AI,1,1)
     return false, false
