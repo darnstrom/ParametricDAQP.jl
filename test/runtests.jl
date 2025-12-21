@@ -25,6 +25,24 @@ function generate_mpQP(n,m,nth)
 
     return mpQP,P_theta
 end
+function generate_mpVI(n, m, nth)
+    H = randn(n, n)
+    eig_min = minimum(eigvals(H + H'))
+    if eig_min < 0
+        H = H - 2 * eig_min * I(n)
+    end
+    f = randn(n)
+    F = randn(n, nth)
+    A = randn(m, n)
+    b = rand(2 * m)
+    F0 = randn(n, nth) # The point F0*th will be primal feasible
+    B = [A; -A] * (-F0)
+
+    mpVI = ParametricDAQP.MPVI(H, F, f, [A; -A], B, b)
+    P_theta = (A=zeros(nth, 0), b=zeros(0), ub=ones(nth), lb=-ones(nth), F0=F0)
+
+    return mpVI, P_theta
+end
 
 function pointlocation(th::Vector{Float64}, partition ;eps_gap=1e-6)
     contained_in= Int64[]
@@ -35,6 +53,16 @@ function pointlocation(th::Vector{Float64}, partition ;eps_gap=1e-6)
         end
     end
     return contained_in
+end
+function evaluate_solution(sol::ParametricDAQP.Solution, θ::Vector{Float64}; eps_gap=1e-6)
+    θ_normalized = (θ - sol.translation) .* sol.scaling
+    all_CRs_indexes = pointlocation(θ_normalized, sol.CRs)
+    if !isempty(all_CRs_indexes)
+        CR = sol.CRs[all_CRs_indexes[1]]
+        return CR.z' * [θ_normalized; 1]
+    else
+        return nothing
+    end
 end
 
 @testset "ParametricDAQP.jl" begin
@@ -489,4 +517,103 @@ end
             @test norm(ParametricDAQP.evaluate(bst,θ) - zref)/norm(zref) < 1e-6
         end
     end
+end
+@testset "basic_mpVI.jl" begin
+    # [ 1 1      [-1  
+    #  -1 1] x +   1] = 0
+    # x2>=θ;  -1<=θ<=1
+    # Solution: if θ >= 0 x*=[(1-θ); θ], else x* = [1;0]
+    n = 2
+    nth = 1
+    H = [1. 1.; -1. 1.]
+    G = zeros(n, nth) # Parametric part of the AVI affine mapping
+    f = [-1.; 1.]
+    A = [0. -1.]
+    b = [0.]
+    E = [-1.;;] # mapping from θ to constraints
+    # Definition set for theta
+    Ath = 0.1 * [1; -1;;]
+    bth = 5 * [1; 1]
+    mpVI = ParametricDAQP.MPVI(H, G, f, A, E, b)
+    Θ = (A=Ath', b=bth, ub=5 * ones(nth), lb=-5 * ones(nth))
+    opts = ParametricDAQP.Settings()
+    tol = 10^(-5)
+    sol, r = ParametricDAQP.mpsolve(mpVI, Θ; opts)
+    # Test parameter outside set Θ
+    θ = [10.]
+    @test isnothing(evaluate_solution(sol, θ))
+    # Test θ >= 0 =>  x*=[(1-θ); θ]
+    θ = [0.1]
+    x_sol = evaluate_solution(sol, θ)
+    @test norm(x_sol - [1. - θ[1]; θ[1]]) < tol * 10
+    # Test that the iterative solution is equal to the explicit one
+    x_ref, _ = ParametricDAQP.AVIsolve(mpVI.H, mpVI.F' * [θ; 1], mpVI.A, mpVI.B' * [θ; 1], tol=tol / 10)
+    @test norm(x_sol - x_ref) < tol * 10
+    # Test  θ < 0 =>  x*=[1; 0]
+    θ = [-0.1]
+    x_sol = evaluate_solution(sol, θ)
+    @test x_sol[1] == 1. && x_sol[2] == 0.
+    # Test that the iterative solution is equal to the explicit one
+    x_ref, _ = ParametricDAQP.AVIsolve(mpVI.H, mpVI.F' * [θ; 1], mpVI.A, mpVI.B' * [θ; 1], tol=tol / 10)
+    @test norm(x_sol - x_ref) < tol * 10
+end
+
+
+@testset "mpVI_random_gen.jl" begin
+    n, m, nth = 10, 10, 4
+    opts = ParametricDAQP.Settings()
+    opts.verbose = 1
+    tol = 10^(-5)
+
+    mpVI, Θ = generate_mpVI(n, m, nth)
+    sol, r = ParametricDAQP.mpsolve(mpVI, Θ; opts)
+    if (nth == 2)
+        # display(ParametricDAQP.plot_regions(sol))
+    end
+    # Test for 1000 random points 
+    N = 1000
+    θs = (2 * rand(nth, N)) .- 1
+    errs = zeros(N)
+    for n = 1:N
+        θ = θs[:, n]
+        # Extract primal solution
+        xsol = evaluate_solution(sol, θ)
+        # Compare with standard solution of VI
+        xref, _ = ParametricDAQP.AVIsolve(mpVI.H, mpVI.F' * [θ; 1], mpVI.A, mpVI.B' * [θ; 1], tol=tol)
+        errs[n] = norm(xsol - xref) / norm(xsol)
+    end
+    @test maximum(errs) < tol * 10
+end
+
+
+
+@testset "VI_unconstrained.jl" begin
+    n = 2
+    # [ 1 1      [-1  
+    #  -1 1] x +   1] = 0
+    # solution: [1;0]
+    H = Float64[1 1; -1 1]
+    f = Float64[-1; 1]
+    A = zeros(0, n)
+    b = zeros(0)
+    tol = 10^(-5)
+    x, r = ParametricDAQP.AVIsolve(H, f, A, b, tol=tol)
+    @test(norm(x - [1; 0]) <= tol * 10)
+    @test(r <= tol)
+end
+
+@testset "VI.jl" begin
+    n = 2
+    # [ 1 1      [-1  
+    #  -1 1] x +   1] = 0
+    # x2>=1
+    # solution: [0;1]
+    H = Float64[1 1; -1 1]
+    f = Float64[-1; 1]
+    A = Float64[0 -1]
+    b = Float64[-1]
+    tol = 10^(-5)
+    x, r = ParametricDAQP.AVIsolve(H, f, A, b, tol=tol)
+    @test(norm(x - [0; 1]) <= tol * 10)
+    @test(r <= tol)
 end

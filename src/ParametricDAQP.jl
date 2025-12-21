@@ -11,5 +11,6 @@ include("plot.jl")
 include("tree.jl")
 include("codegen.jl")
 include("io.jl")
+include("AVIsolve.jl")
 
 end # module ParametricDAQP
