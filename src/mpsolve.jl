@@ -179,29 +179,31 @@ end
 ## Compute slacks 
 function compute_λ_and_μ(ws,prob::MPLDP,opts)
     if(opts.factorization == :qr)
-        R = (ws.nAS > 0) ? UpperTriangular(qr(prob.M[ws.AS,:]').R) : UpperTriangular(zeros(0,0))
-        if(any(abs(R[i,i]) <1e-12 for i in 1:ws.nAS))
-            return true,false
+        if(ws.nAS <= 0)
+            U,L = UpperTriangular(zeros(0,0)),LowerTriangular(zeros(0,0))
+        else
+            qrF = qr!(prob.M[ws.AS,:]')
+            U = UpperTriangular(qrF.R)
+            any(abs(U[i,i]) <1e-12 for i in 1:ws.nAS) && return true,false
+            L = U'
         end
     else
         C = cholesky(prob.MM[ws.AS,ws.AS],check=false)
-        if(!issuccess(C))
-            return true, false
-        end
-        R = UpperTriangular(C.factors)
+        !issuccess(C) && return true, false
+        U,L = C.U,C.L
     end
 
     # Compute λ
     λTH = @view ws.Ath[:,ws.m0+1:ws.m0+ws.nAS]
     λC = @view ws.bth[ws.m0+1:ws.m0+ws.nAS]
-    λTH .= @view prob.d[1:end-1,ws.AS]; rdiv!(rdiv!(λTH, R), adjoint(R))
-    λC .= -@view prob.d[end,ws.AS]; ldiv!(R, ldiv!(adjoint(R), λC))
+    λTH .= @view prob.d[1:end-1,ws.AS]; rdiv!(rdiv!(λTH, U), L)
+    λC .= -@view prob.d[end,ws.AS]; rdiv!(rdiv!(λC',U),L)
     # Compute μ
     μTH = @view ws.Ath[:,ws.m0+ws.nAS+1:end]
     μC = @view ws.bth[ws.m0+ws.nAS+1:end]
     MMAI = prob.MM[ws.AS,ws.IS]
     μTH .= @view prob.d[1:end-1,ws.IS]; mul!(μTH,λTH,MMAI,1,-1)
-    μC .=  @view prob.d[end,ws.IS]; mul!(μC,MMAI',λC,1,1)
+    μC .=  @view prob.d[end,ws.IS]; mul!(μC',λC',MMAI,1,1)
     return false, false
 end
 
