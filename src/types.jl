@@ -41,8 +41,10 @@ struct MPVI
     F::Matrix{Float64} # transpose: size = n_θ + 1 * n_x 
     A::Matrix{Float64} # size = n_constr * n_x
     B::Matrix{Float64} # transpose: size = n_θ + 1 * n_constr 
-    AHinv::Matrix{Float64} # size = n_constr * n_x
+    HinvAt::Matrix{Float64}
     AHinvA::Matrix{Float64} # size = n_constr * n_constr
+    HinvF::Matrix{Float64}
+    d::Matrix{Float64}
     n_theta::Int64
     n::Int64
     bounds_table::Vector{Int64}

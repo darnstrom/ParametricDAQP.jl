@@ -40,8 +40,13 @@ function setup_mpp(mpp;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
     # If H not symmetric => MPVI
     if(!isapprox(mpp.H, mpp.H', rtol=1e-9))
         AHinv = mpp.A / mpp.H
-        AHinvA = AHinv * mpp.A'
-        return MPVI(mpp.H, Matrix(F'),mpp.A, Matrix(B'),AHinv,AHinvA,nth,n,bnd_tbl,ones(m),eq_ids,out_inds,zlims)
+        HinvAt = mpp.A / mpp.H'
+        AHinvA = HinvAt*mpp.A'
+        #AHinvA = mpp.A*AHinv'
+        HinvF = Matrix(-(mpp.H\F)')
+        d = Matrix((B-mpp.A*HinvF')')
+        return MPVI(mpp.H, Matrix(F'),mpp.A, Matrix(B'),HinvAt,AHinvA,HinvF,d,
+                    nth,n,bnd_tbl,ones(m),eq_ids,out_inds,zlims)
     end
 
     # H is symmetric -> Either MPQP or MPLDP
@@ -78,7 +83,7 @@ function setup_mpp(mpp;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
 end
 
 ## Normalize parameters to -1 ≤ θ ≤ 1
-function normalize_parameters(prob::MPLDP,Θ;eps_zero=1e-12)
+function normalize_parameters(prob::Union{MPLDP,MPVI},Θ;eps_zero=1e-12)
     if(isempty(Θ.ub)) # assume already normalized
         return prob,Θ,(center=0,scaling = 1)
     end
@@ -98,7 +103,7 @@ function normalize_parameters(prob::MPLDP,Θ;eps_zero=1e-12)
     Θ =(A=A, b=b, lb=-ones(nth), ub=ones(nth));
     return prob, Θ,(center=center, scaling = 1 ./ norm_factors)
 end
-function normalize_parameters(prob::Union{MPQP,MPVI},Θ)
+function normalize_parameters(prob::MPQP,Θ)
     if(isempty(Θ.ub)) # assume already normalized
         return prob,Θ,(center=0,scaling = 1)
     end
@@ -298,7 +303,7 @@ islowrank(prob::MPLDP,ws) = rank(view(prob.AHinvA,ws.AS,ws.AS))<ws.nAS
 islowrank(prob::MPQP,ws) = false # TODO
 islowrank(prob::MPVI, ws) = false
 ## Extract solution
-function extract_solution(AS,prob::MPLDP,ws)
+function extract_solution(AS,prob::Union{MPLDP,MPVI},ws)
     λ = [ws.Ath[:,ws.m0+1:ws.m0+ws.nAS];-ws.bth[ws.m0+1:ws.m0+ws.nAS]']
     # Renormalize dual variable from half-plane normalization
     for i in 1:ws.nAS
@@ -317,7 +322,7 @@ function extract_solution(AS,prob::MPLDP,ws)
     λ = ws.opts.store_dual ? λ : zeros(0,0)
     return x,λ
 end
-function extract_solution(AS,prob::Union{MPQP,MPVI},ws)
+function extract_solution(AS,prob::MPQP,ws)
     if ws.opts.store_dual
         λ = [ws.Ath[:,ws.m0+1:ws.m0+ws.nAS];-ws.bth[ws.m0+1:ws.m0+ws.nAS]']
     else
