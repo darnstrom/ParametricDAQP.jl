@@ -4,8 +4,10 @@ using Test
 using LinearAlgebra
 using DAQPBase
 const DAQP = DAQPBase
+using Random
 global templib
 
+Random.seed!(1234)
 function generate_mpQP(n,m,nth)
     M = randn(n,n)
     H = M*M'
