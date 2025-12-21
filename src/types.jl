@@ -103,6 +103,7 @@ Base.@kwdef mutable struct Settings
     region_limit::Int64 = 1e12
     chunk_size::Int64 = 1e3 
     factorization::Symbol = :chol
+    pivot::Bool = false
     postcheck_rank::Bool = true
     lowdim_tol::Float64 = 1e-12
     daqp_settings = Dict{Symbol,Any}()
@@ -143,6 +144,7 @@ mutable struct Workspace{T<:Integer}
     nAS::Int64
     norm_factors:: Vector{Float64}
     x::Matrix{Float64}
+    intAS::Vector{Int}
 end
 
 struct Solution

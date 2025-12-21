@@ -230,7 +230,7 @@ function setup_workspace(Θ,n_constr;opts=Settings())::Workspace
     max_radius =  isempty(Θ.ub) ? nth : nth*(maximum(Θ.ub)^2)/2;
     ws = Workspace{UIntX}(A,b,blower,zeros(Cint,m_max),0,m0,p,falses(0,0),0, 
                        UIntX[], UIntX[], UIntX[], CriticalRegion[],Set{UIntX}(),opts,
-                       falses(n_constr),falses(n_constr),0, zeros(n_constr),zeros(0,0));
+                       falses(n_constr),falses(n_constr),0, zeros(n_constr),zeros(0,0),Int[]);
     DAQPBase.init_c_workspace_ldp(p,ws.Ath,ws.bth,ws.bth_lower,ws.sense;max_radius)
     settings(ws.DAQP_workspace,opts.daqp_settings)
     return ws 
@@ -281,7 +281,7 @@ function extract_CR(ws,prob)
         !is_feasible &&  return nothing
     end
 
-    AS = ws.opts.store_AS || ws.opts.store_regions ? findall(ws.AS) : Int64[]
+    AS = ws.opts.store_AS || ws.opts.store_regions ? ws.intAS : Int64[]
     # Extract regions/solution
     if(ws.opts.store_regions)
         if(ws.opts.remove_redundant)
@@ -311,7 +311,7 @@ function extract_solution(AS,prob::Union{MPLDP,MPVI},ws)
     end
 
     # Compute primal solution x[1:end-1,:]' θ + x[end,:]
-    x = copy(prob.HinvF); mul!(x,λ,prob.HinvAt[ws.AS,:],1,1)
+    x = copy(prob.HinvF); mul!(x,λ,prob.HinvAt[ws.intAS,:],1,1)
 
     # Renormalize dual variable from LDP transform
     if ws.opts.store_dual && ws.opts.store_AS
