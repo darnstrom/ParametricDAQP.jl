@@ -43,7 +43,7 @@ function mpsolve(mpQP,Θ;opts=nothing, AS0 = nothing) # bounds_table as option
             else
                 A,b =copy(Θ.A),copy(Θ.b)
             end
-            F = CriticalRegion[CriticalRegion(Int[],A,b,prob.RinvV,zeros(nth+1,0),zeros(nth))]
+            F = CriticalRegion[CriticalRegion(Int[],A,b,prob.HinvF,zeros(nth+1,0),zeros(nth))]
             info = (solve_time = 0, nCR = 0, nLPs = 0, nExplored = 0, status=:Solved)
         end
         return Solution(prob,F,tf.scaling,tf.center,opts,info.status), info
@@ -188,7 +188,7 @@ function compute_λ_and_μ(ws,prob::MPLDP,opts)
             L = U'
         end
     else
-        C = cholesky!(prob.MM[ws.AS,ws.AS],check=false)
+        C = cholesky!(prob.AHinvA[ws.AS,ws.AS],check=false)
         !issuccess(C) && return true, false
         U,L = C.U,C.L
     end
@@ -201,9 +201,9 @@ function compute_λ_and_μ(ws,prob::MPLDP,opts)
     # Compute μ
     μTH = @view ws.Ath[:,ws.m0+ws.nAS+1:end]
     μC = @view ws.bth[ws.m0+ws.nAS+1:end]
-    MMAI = prob.MM[ws.AS,ws.IS]
-    μTH .= @view prob.d[1:end-1,ws.IS]; mul!(μTH,λTH,MMAI,1,-1)
-    μC .=  @view prob.d[end,ws.IS]; mul!(μC',λC',MMAI,1,1)
+    AHinvA_AI = prob.AHinvA[ws.AS,ws.IS]
+    μTH .= @view prob.d[1:end-1,ws.IS]; mul!(μTH,λTH,AHinvA_AI,1,-1)
+    μC .=  @view prob.d[end,ws.IS]; mul!(μC',λC',AHinvA_AI,1,1)
     return false, false
 end
 

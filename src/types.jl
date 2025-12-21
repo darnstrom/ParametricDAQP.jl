@@ -8,10 +8,10 @@ mutable struct CriticalRegion
 end
 
 struct MPLDP 
-    MM::Matrix{Float64}
+    AHinvA::Matrix{Float64}
     M::Matrix{Float64}
-    MRt::Matrix{Float64}
-    RinvV::Matrix{Float64}
+    HinvAt::Matrix{Float64}
+    HinvF::Matrix{Float64}
     d::Matrix{Float64}
     n_theta::Int64
     n::Int64

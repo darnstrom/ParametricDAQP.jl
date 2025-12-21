@@ -86,10 +86,10 @@ function normalize_parameters(prob::MPLDP,Θ;eps_zero=1e-12)
     center = (Θ.lb+Θ.ub)/2;
     norm_factors = (Θ.ub-Θ.lb)/2;
     prob.d[end:end,:] += center'*prob.d[1:end-1,:];
-    prob.RinvV[end:end,:] += center'*prob.RinvV[1:end-1,:];
+    prob.HinvF[end:end,:] += center'*prob.HinvF[1:end-1,:];
     for i in 1:nth
         prob.d[i,:] *= norm_factors[i];
-        prob.RinvV[i,:] *= norm_factors[i];
+        prob.HinvF[i,:] *= norm_factors[i];
     end
 
     Ath = haskey(Θ,:A) ? Θ.A : zeros(nth,0);
@@ -294,7 +294,7 @@ function extract_CR(ws,prob)
     return CriticalRegion(AS,Ath,bth,x,λ,θ)
 end
 ## Check rank
-islowrank(prob::MPLDP,ws) = rank(view(prob.MM,ws.AS,ws.AS))<ws.nAS
+islowrank(prob::MPLDP,ws) = rank(view(prob.AHinvA,ws.AS,ws.AS))<ws.nAS
 islowrank(prob::MPQP,ws) = false # TODO
 islowrank(prob::MPVI, ws) = false
 ## Extract solution
@@ -306,7 +306,7 @@ function extract_solution(AS,prob::MPLDP,ws)
     end
 
     # Compute primal solution x[1:end-1,:]' θ + x[end,:]
-    x = copy(prob.RinvV); mul!(x,λ,prob.MRt[ws.AS,:],1,1)
+    x = copy(prob.HinvF); mul!(x,λ,prob.HinvAt[ws.AS,:],1,1)
 
     # Renormalize dual variable from LDP transform
     if ws.opts.store_dual && ws.opts.store_AS
