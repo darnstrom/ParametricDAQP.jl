@@ -177,8 +177,12 @@ function normalize_model(ws;eps_zero=1e-12)
     return true
 end
 ## Compute slacks 
-function compute_λ_and_μ(ws,prob::MPLDP,opts)
-    if(opts.factorization == :qr)
+function compute_λ_and_μ(ws,prob::Union{MPLDP,MPVI},opts)
+    if(prob isa MPVI)
+        luF = lu!(prob.AHinvA[ws.AS, ws.AS],NoPivot(),check=false)
+        !issuccess(luF) && return true, false # LICQ broken -> explore up, do not explore down
+        U,L =  UpperTriangular(luF.U), LowerTriangular(luF.L)
+    elseif(opts.factorization == :qr)
         if(ws.nAS <= 0)
             U,L = UpperTriangular(zeros(0,0)),LowerTriangular(zeros(0,0))
         else
@@ -244,92 +248,6 @@ function compute_λ_and_μ(ws,prob::MPQP,opts)
     ws.x = x # Save x for later
 
     return false,false
-end
-function compute_λ_and_μ(ws, prob::MPVI, opts)
-    # If there is no degeneracy returns (false, false) - which is then ignored
-    # Otherwise, returns true if one should explore up (first output) or down (second output)
-    Q, R = qr(prob.A[ws.AS, :]')
-    if (size(R, 1) < ws.nAS || any(abs(R[i, i]) < 1e-7 for i in 1:ws.nAS))
-        return true, false # LICQ broken -> explore only subsets
-    end
-
-    # Calculation of multipliers of active constraints:
-    # λₐ = -(AₐH⁻¹Aₐ')⁻¹(AₐH⁻¹F + Bₐ)θ - (AₐH⁻¹Aₐ')⁻¹(AₐH⁻¹f + bₐ)
-    # where subscript a denotes restriction to active set rows.
-    # Critical region constraint 1:
-    # λ ≥ 0
-    # Write as:
-    # (-1) * λTH * θ + λC ≥ 0 
-    # where: λTH = (AₐH⁻¹Aₐ')⁻¹(AₐH⁻¹F + Bₐ);  λC = -(AₐH⁻¹Aₐ')⁻¹(AₐH⁻¹f + bₐ)
-    # Write as a polyhedron:
-    # Ath * θ ≤ bth
-    # where Ath = λTH; bth = λC
-    λTH = @view ws.Ath[:, ws.m0+1:ws.m0+ws.nAS]
-    λC = @view ws.bth[ws.m0+1:ws.m0+ws.nAS]
-    λTH .= prob.B[1:end-1, ws.AS]
-    F = @view prob.F[1:end-1, :]
-    F = F'
-    f = @view prob.F[end, :]
-    b = @view prob.B[end, ws.AS]
-    A_active_set = @view prob.A[ws.AS, :]
-    AHinv_active = @view prob.AHinv[ws.AS, :]
-    AHinv_inactive = @view prob.AHinv[ws.IS, :]
-    AHinvA_active = @view prob.AHinvA[ws.AS, ws.AS]
-    AHinvA_inactive = @view prob.AHinvA[ws.IS, ws.AS]
-    mul!(λTH, F', AHinv_active', 1.0, 1.0)  # λTH = λTH + F' * AHinv'
-
-    try
-        rdiv!(λTH, lu(AHinvA_active')) # This modifies ws.Ath[:,ws.m0+1:ws.m0+ws.nAS] 
-    catch err
-        return true, false # LICQ broken -> explore only subsets
-    end
-
-    # Assigns  λC = - AH⁻¹A[ws.AS] \ (AH⁻¹[ws.AS, :] * f + b)
-    λC .= b
-    mul!(λC, AHinv_active, f, -1., -1.)
-    # λC .= AHinvA_active \ λC
-    try
-        ldiv!(lu(AHinvA_active), λC)
-    catch e
-        @warn "Error in ldiv!(lu(AHinvA_active), λC): $e"
-        return true, false # LICQ broken -> explore only subsets
-    end
-    # x* = -H⁻¹(Fθ + f + Aₐ'λₐ)
-    # Substitute the previous quantities:: x* = -H⁻¹( (F - Aₐ'λTH) * θ + f + Aₐ'λC)
-
-    # x* = -H⁻¹(Fθ + f + Aₐ'λₐ)
-    # Re-using the previous quantities we get: x* = -H⁻¹( (F - Aₐ'λTH) * θ + f + Aₐ'λC)
-    # Quantities are stored such that [θ;1]' * ws.x = x*
-    # Size of ws.x: nθ+1, nx
-    if isempty(ws.x)
-        ws.x = zeros(size(prob.F)...) # allocate ws.x once. Note: prob.F = [F'; f']
-    end
-    ws.x = ([λTH; -λC'] * prob.A[ws.AS, :] - prob.F) / prob.H' #size: nθ+1, nx #TODO: make more efficient
-
-    # Compute μ (slack of inactive inequality constraints)
-    # by definition:
-    # μ = Bᵢ * θ + bᵢ - Aᵢ x*
-    # where subscript i denotes restriction to inactive set rows.
-    # Substituting x* = -H⁻¹(Fθ + f + Aₐ'λₐ)
-    # Critical region constraint 1:
-    # μ ≥ 0
-    # Write as polyhedron:
-    # Aᵢth * θ <= bᵢth
-    # Where 
-    # Aᵢth = -( Bᵢ + AᵢH⁻¹F + (-1) * AᵢH⁻¹Aₐ'λTH)
-    # bᵢth = bᵢ + AᵢH⁻¹f + AᵢH⁻¹Aₐ'λC
-    # and λTH, λC are computed earlier
-    μTH = @view ws.Ath[:, ws.m0+ws.nAS+1:end]
-    μC = @view ws.bth[ws.m0+ws.nAS+1:end]
-    # Assigns ws.Ath[:,ws.m0+ws.nAS+1:end] 
-    μTH .= @view prob.B[1:end-1, ws.IS] # note: prob.B = [B', b']
-    mul!(μTH, F', AHinv_inactive', 1., 1.) #Partial result: = B' + F'(AH⁻¹)'
-    mul!(μTH, λTH, AHinvA_inactive', 1., -1.) # Result: = - (B' + F'(AᵢH⁻¹)') + λTH AᵢH⁻¹Aₐ'
-    # Assigns ws.bth[ws.m0+ws.nAS+1:end] 
-    μC .= @view prob.B[end, ws.IS]
-    mul!(μC, AHinv_inactive, f, 1., 1.)
-    mul!(μC, AHinvA_inactive, λC, 1., 1.)
-    return false, false
 end
 ## Explore subsets 
 function explore_subsets(as,ws,id_cands,S)
