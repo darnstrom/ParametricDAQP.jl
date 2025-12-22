@@ -197,7 +197,7 @@ function compute_λ_and_μ(ws,prob::Union{MPLDP,MPVI},opts)
     else
         C = cholesky!(prob.AHinvA[ws.AS,ws.AS], opts.pivot ? RowMaximum() : NoPivot(), check=false)
         !issuccess(C) && return true, false
-        U,L = C.U,C.L
+        U,L = C.U,C.U'
         p = opts.pivot ? C.p : Int[]
     end
 
