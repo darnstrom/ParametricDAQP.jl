@@ -252,7 +252,7 @@ end
 function uint2as(u, ws, bounds_table)
     ws.AS .= false
     ws.IS .= true
-    for i = 1:length(ws.AS)
+    @inbounds for i = 1:length(ws.AS)
         (u == 0) && break # the rest is inactive
         if(u&1==1)
             ws.AS[i] = true
