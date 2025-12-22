@@ -145,6 +145,7 @@ mutable struct Workspace{T<:Integer}
     norm_factors:: Vector{Float64}
     x::Matrix{Float64}
     intAS::Vector{Int}
+    submatrix_buffer::Vector{Float64}
 end
 
 struct Solution
