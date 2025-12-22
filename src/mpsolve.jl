@@ -179,10 +179,10 @@ end
 ## Compute slacks 
 function compute_λ_and_μ(ws,prob::Union{MPLDP,MPVI},opts)
     if(prob isa MPVI)
-        luF = lu!(prob.AHinvA[ws.AS, ws.AS], false ? RowMaximum() : NoPivot(), check=false)
+        luF = lu!(prob.AHinvA[ws.AS, ws.AS]', opts.pivot ? RowMaximum() : NoPivot(), check=false)
         !issuccess(luF) && return true, false # LICQ broken -> explore up, do not explore down
-        U,L =  UpperTriangular(luF.U), LowerTriangular(luF.L)
-        p = false ? luF.p : Int[]
+        U,L =  UpperTriangular(luF.L'), LowerTriangular(luF.U')
+        p = opts.pivot ? luF.p : Int[]
     elseif(opts.factorization == :qr)
         if(ws.nAS <= 0)
             U,L = UpperTriangular(zeros(0,0)),LowerTriangular(zeros(0,0))
@@ -201,14 +201,20 @@ function compute_λ_and_μ(ws,prob::Union{MPLDP,MPVI},opts)
         p = opts.pivot ? C.p : Int[]
     end
 
+    # Pivot
     AS = findall(ws.AS)
-    opts.pivot && Base.permute!(AS,p)
+    if opts.pivot
+        ASpiv = (prob isa MPVI) ? Base.permute!(copy(AS),p) : Base.permute!(AS,p)
+    else
+        ASpiv = AS
+    end
     ws.intAS = AS
+
     # Compute λ
     λTH = @view ws.Ath[:,ws.m0+1:ws.m0+ws.nAS]
     λC = @view ws.bth[ws.m0+1:ws.m0+ws.nAS]
-    λTH .= @view prob.d[1:end-1,AS]; rdiv!(rdiv!(λTH, U), L)
-    λC .= -@view prob.d[end,AS]; rdiv!(rdiv!(λC',U),L)
+    λTH .= @view prob.d[1:end-1,ASpiv]; rdiv!(rdiv!(λTH, U), L)
+    λC .= -@view prob.d[end,ASpiv]; rdiv!(rdiv!(λC',U),L)
     # Compute μ
     μTH = @view ws.Ath[:,ws.m0+ws.nAS+1:end]
     μC = @view ws.bth[ws.m0+ws.nAS+1:end]
