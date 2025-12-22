@@ -195,7 +195,10 @@ function compute_λ_and_μ(ws,prob::Union{MPLDP,MPVI},opts)
             p = opts.pivot ? qrF.p : Int[]
         end
     else
-        C = cholesky!(prob.AHinvA[ws.AS,ws.AS], opts.pivot ? RowMaximum() : NoPivot(), check=false)
+        resize!(ws.submatrix_buffer,ws.nAS^2)
+        AHinvA_AA = reshape(ws.submatrix_buffer,(ws.nAS,ws.nAS))
+        @views AHinvA_AA .= prob.AHinvA[ws.AS,ws.AS]
+        C = cholesky!(AHinvA_AA, opts.pivot ? RowMaximum() : NoPivot(), check=false)
         !issuccess(C) && return true, false
         U,L = C.U,C.U'
         p = opts.pivot ? C.p : Int[]
@@ -218,7 +221,12 @@ function compute_λ_and_μ(ws,prob::Union{MPLDP,MPVI},opts)
     # Compute μ
     μTH = @view ws.Ath[:,ws.m0+ws.nAS+1:end]
     μC = @view ws.bth[ws.m0+ws.nAS+1:end]
-    AHinvA_AI = prob.AHinvA[AS,ws.IS]
+
+    nIS = length(ws.AS)-ws.nAS 
+    resize!(ws.submatrix_buffer,ws.nAS*nIS)
+    AHinvA_AI = reshape(ws.submatrix_buffer,(ws.nAS,nIS))
+    @views AHinvA_AI .= prob.AHinvA[AS,ws.IS]
+
     μTH .= @view prob.d[1:end-1,ws.IS]; mul!(μTH,λTH,AHinvA_AI,1,-1)
     μC .=  @view prob.d[end,ws.IS]; mul!(μC',λC',AHinvA_AI,1,1)
     return false, false
