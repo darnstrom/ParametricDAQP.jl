@@ -100,7 +100,7 @@ function classify_regions(CRs,hps, reg2hp, ws; reg_ids = nothing, hp_ids = nothi
                 continue
             end
 
-            slack = isnothing(branches) ? hps[:,hj]'*[CRs[i].th;-1] : NaN
+            slack = isnothing(branches) ? hps[1:end-1,hj]'*CRs[i].th-hps[end,hj] : NaN
 
             # Negative
             ws.A[:,1] = -hps[1:nth,hj]
@@ -211,10 +211,34 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
     # Do initial classification
     nregs,pregs = classify_regions(CRs,hps,reg2hp,ws)
 
+    function get_extream_fbs_old(splits::Tuple{BitVector,BitVector}, fb_ids, seen_buffer, extreama)
+        # Pre-allocate a single Set to reuse
+        left = Set{Int}(fb_ids[first(splits)])
+        right = Set{Int}(fb_ids[last(splits)])
+        return extreama(length(left),length(right))
+    end
+
+    function get_extream_fbs(splits::Tuple{BitVector,BitVector}, fb_ids, seen_buffer, extreama)
+        s_left, s_right = splits
+
+        l_count = count_unique_ids(s_left, fb_ids, seen_buffer)
+        r_count = count_unique_ids(s_right, fb_ids, seen_buffer)
+        return extreama(l_count, r_count)
+    end
+
+    function count_unique_ids(bits, fb_ids, seen_buffer)
+        fill!(seen_buffer, false)
+        @inbounds for i in findall(bits)
+            seen_buffer[fb_ids[i]] = true
+        end
+        return sum(seen_buffer)
+    end
+    seen_buffer = [false for _ in 1:length(fbs)]
+
     get_fbid = s->Set{Int}(fb_ids[s])
-    criterions = dual ? [x->max(sum.(x)...)] :  [s->max(length.(get_fbid.(s))...),
+    criterions = dual ? [x->max(sum.(x)...)] :  [s->get_extream_fbs(s,fb_ids,seen_buffer,max),
                                                  s->max(sum.(s)...),
-                                                 s->min(length.(get_fbid.(s))...)]
+                                                 s->get_extream_fbs(s,fb_ids,seen_buffer,min)]
     # Start exploration
     hp_list, jump_list = Int[0],Int[0]
     depth = 0
