@@ -299,9 +299,8 @@ function extract_CR(ws,prob)
     return CriticalRegion(AS,Ath,bth,x,λ,θ)
 end
 ## Check rank
-islowrank(prob::MPLDP,ws) = rank(view(prob.AHinvA,ws.AS,ws.AS))<ws.nAS
+islowrank(prob::Union{MPLDP,MPVI},ws) = rank(view(prob.AHinvA,ws.AS,ws.AS))<ws.nAS
 islowrank(prob::MPQP,ws) = false # TODO
-islowrank(prob::MPVI, ws) = false
 ## Extract solution
 function extract_solution(AS,prob::Union{MPLDP,MPVI},ws)
     λ = [ws.Ath[:,ws.m0+1:ws.m0+ws.nAS];-ws.bth[ws.m0+1:ws.m0+ws.nAS]']
