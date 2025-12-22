@@ -273,7 +273,7 @@ end
 ## Explore subsets 
 function explore_subsets(as,ws,id_cands,S)
     UIntX = typeof(as)
-    for i in id_cands
+    @inbounds for i in id_cands
         mask = UIntX(1)<<(i-1)
         as&mask ==  0 && continue
         as_new = as&~mask
@@ -286,7 +286,7 @@ end
 ## Explore supersets 
 function explore_supersets(as,ws,id_cands,S,bounds_table)
     UIntX = typeof(as)
-    for i in id_cands
+    @inbounds for i in id_cands
         mask = UIntX(1)<<(i-1);
         as&(mask|(UIntX(1)<<(bounds_table[i]-1))) != 0 && continue
         #as&mask != 0 && continue
