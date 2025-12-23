@@ -1,6 +1,6 @@
 name = "ParametricDAQP"
 uuid = "19f72acb-e2a9-45c8-96b9-4d5487c8db2e"
-version = "0.4.9"
+version = "0.5.0"
 authors = ["Daniel Arnström <daniel.arnstrom@gmail.com>"]
 
 [deps]
