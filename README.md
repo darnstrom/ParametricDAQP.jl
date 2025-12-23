@@ -14,7 +14,7 @@ where $H \succ 0$ and $\Theta \triangleq \lbrace l \leq \theta \leq u : A_{\thet
 
 The solution $z^*(\theta)$ is a piecewise-affine function over a polyhedral partition.
 
-## Example
+## Examples
 The following code solves the mpQP in Section 7.1 in Bemporad et al. 2002
 ```julia
 using ParametricDAQP
@@ -33,6 +33,22 @@ ub,lb  = 1.5*ones(2), -1.5*ones(2);
 
 # Solve mpQP over desired region
 sol,info = ParametricDAQP.mpsolve(mpQP,Θ);
+```
+
+The following example JuMP interface of ParametricDAQP.jl to solve a portfolio optimization problem
+
+```julia
+using ParametricDAQP
+using JuMP
+
+model = Model()
+@variable(model, w[1:7]>=0)
+@variable(model, μ[1:7])
+@constraint(model, sum(w) == 1)
+@objective(model, Min, w'*w - μ'*w)
+
+parameters = μ 
+sol,info = ParametricDAQP.mpsolve(model,parameters;out_vars = w)
 ```
 ## Citation
 If you use the package in your work, consider citing the following paper
