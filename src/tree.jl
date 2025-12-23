@@ -211,13 +211,6 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
     # Do initial classification
     nregs,pregs = classify_regions(CRs,hps,reg2hp,ws)
 
-    function get_extream_fbs_old(splits::Tuple{BitVector,BitVector}, fb_ids, seen_buffer, extreama)
-        # Pre-allocate a single Set to reuse
-        left = Set{Int}(fb_ids[first(splits)])
-        right = Set{Int}(fb_ids[last(splits)])
-        return extreama(length(left),length(right))
-    end
-
     function get_extream_fbs(splits::Tuple{BitVector,BitVector}, fb_ids, seen_buffer, extreama)
         s_left, s_right = splits
 
