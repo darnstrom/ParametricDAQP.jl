@@ -464,8 +464,8 @@ end
     end
 end
 @testset "basic_mpVI.jl" begin
-    # [ 1 1      [-1  
-    #  -1 1] x +   1] = 0
+    # [ 1 1]     [-1]  
+    # [-1 1] x + [ 1] = 0
     # x2>=θ;  -1<=θ<=1
     # Solution: if θ >= 0 x*=[(1-θ); θ], else x* = [1;0]
     n = 2
@@ -484,22 +484,17 @@ end
     opts = ParametricDAQP.Settings()
     tol = 10^(-5)
     sol, r = ParametricDAQP.mpsolve(mpVI, Θ; opts)
-    # Test parameter outside set Θ
-    θ = [10.]
+    θ = [10.] # Test parameter outside set Θ
     @test isnothing(evaluate_solution(sol, θ))
-    # Test θ >= 0 =>  x*=[(1-θ); θ]
-    θ = [0.1]
+    θ = [0.1] # Test θ >= 0 =>  x*=[(1-θ); θ]
     x_sol = evaluate_solution(sol, θ)
     @test norm(x_sol - [1. - θ[1]; θ[1]]) < tol * 10
-    # Test that the iterative solution is equal to the explicit one
-    x_ref, _ = ParametricDAQP.AVIsolve(mpVI.H, mpVI.F' * [θ; 1], mpVI.A, mpVI.B' * [θ; 1], tol=tol / 10)
+    x_ref, _ = DAQPBase.solve_avi(mpVI.H, mpVI.F' * [θ; 1], mpVI.A, mpVI.B' * [θ; 1])
     @test norm(x_sol - x_ref) < tol * 10
-    # Test  θ < 0 =>  x*=[1; 0]
-    θ = [-0.1]
+    θ = [-0.1]# Test  θ < 0 =>  x*=[1; 0]
     x_sol = evaluate_solution(sol, θ)
     @test x_sol[1] == 1. && x_sol[2] == 0.
-    # Test that the iterative solution is equal to the explicit one
-    x_ref, _ = ParametricDAQP.AVIsolve(mpVI.H, mpVI.F' * [θ; 1], mpVI.A, mpVI.B' * [θ; 1], tol=tol / 10)
+    x_ref, _ = DAQPBase.solve_avi(mpVI.H, mpVI.F' * [θ; 1], mpVI.A, mpVI.B' * [θ; 1])
     @test norm(x_sol - x_ref) < tol * 10
 end
 
@@ -512,19 +507,15 @@ end
 
     mpVI, Θ = generate_mpVI(n, m, nth)
     sol, r = ParametricDAQP.mpsolve(mpVI, Θ; opts)
-    if (nth == 2)
-        # display(ParametricDAQP.plot_regions(sol))
-    end
     # Test for 1000 random points 
     N = 1000
     θs = (2 * rand(nth, N)) .- 1
     errs = zeros(N)
     for n = 1:N
         θ = θs[:, n]
-        # Extract primal solution
         xsol = evaluate_solution(sol, θ)
         # Compare with standard solution of VI
-        xref, _ = ParametricDAQP.AVIsolve(mpVI.H, mpVI.F' * [θ; 1], mpVI.A, mpVI.B' * [θ; 1], tol=tol)
+        xref, _ = DAQPBase.solve_avi(mpVI.H, mpVI.F' * [θ; 1], mpVI.A, mpVI.B' * [θ; 1])
         errs[n] = norm(xsol - xref) / norm(xsol)
     end
     @test maximum(errs) < tol * 10
@@ -533,24 +524,21 @@ end
 
 
 @testset "VI_unconstrained.jl" begin
-    n = 2
-    # [ 1 1      [-1  
-    #  -1 1] x +   1] = 0
+    # [ 1 1]      [-1]  
+    # [-1 1] x +  [ 1] = 0
     # solution: [1;0]
     H = Float64[1 1; -1 1]
     f = Float64[-1; 1]
-    A = zeros(0, n)
+    A = zeros(0, 2)
     b = zeros(0)
     tol = 10^(-5)
-    x, r = ParametricDAQP.AVIsolve(H, f, A, b, tol=tol)
+    x, r = DAQPBase.solve_avi(H, f, A, b)
     @test(norm(x - [1; 0]) <= tol * 10)
-    @test(r <= tol)
 end
 
 @testset "VI.jl" begin
-    n = 2
-    # [ 1 1      [-1  
-    #  -1 1] x +   1] = 0
+    # [ 1 1]     [-1]  
+    # [-1 1] x + [ 1] = 0
     # x2>=1
     # solution: [0;1]
     H = Float64[1 1; -1 1]
@@ -558,7 +546,6 @@ end
     A = Float64[0 -1]
     b = Float64[-1]
     tol = 10^(-5)
-    x, r = ParametricDAQP.AVIsolve(H, f, A, b, tol=tol)
+    x, λ = DAQPBase.solve_avi(H, f, A, b)
     @test(norm(x - [0; 1]) <= tol * 10)
-    @test(r <= tol)
 end
