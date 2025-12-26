@@ -356,58 +356,46 @@ function compute_AS0(mpLDP::MPLDP,Θ)
     _,_,exitflag,info= DAQPBase.quadprog(zeros(0,0),zeros(0),mpLDP.M,mpLDP.d'*[θ;1],Float64[],senses);
     return mpLDP.eq_ids ∪ findall(abs.(info.λ).> 0)
 end
-function compute_AS0(mpQP::MPQP,Θ)
+function compute_AS0(mpp::Union{MPQP,MPVI},Θ)
     # Center in box is zero -> dtot = d[end,:]
-    # TODO: set eps_prox ≠ 0
-    senses = zeros(Cint,size(mpQP.B,2)+length(Θ.b));
-    senses[mpQP.eq_ids] .= DAQPBase.EQUALITY
-    d = DAQPBase.Model();
-    DAQPBase.settings(d,Dict(:eps_prox=>1e-6)) # Since the Hessian is singular
+    senses = zeros(Cint,size(mpp.B,2)+length(Θ.b));
+    senses[mpp.eq_ids] .= DAQPBase.EQUALITY
     if(isempty(Θ.A) || all(Θ.b .>= 0)) # if origin is feasible
-        DAQPBase.setup(d,mpQP.H,mpQP.F[end,:],mpQP.A,mpQP.B[end,:],Float64[], senses);
-        x,fval,exitflag,info = DAQPBase.solve(d);
-        exitflag == 1 && return findall(abs.(info.λ).> 0)
+        if(mpp isa MPVI)
+            bupper,blower = mpp.B[end,:], fill(-1e30,size(mpp.B,2)); 
+            blower[mpp.eq_ids] = bupper[mpp.eq_ids];
+            x,λ,info = DAQPBase.solve_avi(mpp.H,mpp.F[end,:],mpp.A,bupper,blower)
+            info.status == :Solved && return info.AS
+        else # MPLP
+            d = DAQPBase.Model();
+            DAQPBase.settings(d,Dict(:eps_prox=>1e-6)) # Since the Hessian is singular
+            DAQPBase.setup(d,mpp.H,mpp.F[end,:],mpp.A,mpp.B[end,:],Float64[], senses);
+            x,fval,exitflag,info = DAQPBase.solve(d);
+            exitflag == 1 && return findall(abs.(info.λ).> 0)
+        end
     end
 
-    Alift = [-mpQP.B[1:end-1,:]' mpQP.A; Θ.A' zeros(length(Θ.b),mpQP.n)]
+    Alift = [-mpp.B[1:end-1,:]' mpp.A; Θ.A' zeros(length(Θ.b),mpp.n)]
     # Solve lifted feasibility problem in (x,θ)-space to find initial point 
-    x,_,exitflag,info= DAQPBase.quadprog(zeros(0,0),zeros(0),Alift,[mpQP.B[end,:];Θ.b],Float64[],senses);
+    x,_,exitflag,info= DAQPBase.quadprog(zeros(0,0),zeros(0),Alift,[mpp.B[end,:];Θ.b],Float64[],senses);
     if exitflag != 1
         @warn "There is no parameter that makes the problem feasible"
         return nothing
     end
-    θ = x[1:mpQP.n_theta]
-    d = DAQPBase.Model();
-    DAQPBase.settings(d,Dict(:eps_prox=>1e-6)) # Since the Hessian is singular
-    DAQPBase.setup(d,mpQP.H,mpQP.F'*[θ;1],mpQP.A,mpQP.B'*[θ;1],Float64[],senses);
-    x,fval,exitflag,info = DAQPBase.solve(d);
-    return findall(abs.(info.λ).> 0)
-end
-function compute_AS0(mpQP::MPVI, Θ)
-    # Solve lifted feasibility problem in (x,θ)-space to find initial point 
-    senses = zeros(Cint, size(mpQP.B, 2)) # Vector that sets the type of constraints. 0 indicates inequality
-    nth = size(Θ.A, 1)
-    nx = size(mpQP.A, 2)
-    n_constr_Θ = 0
-    :A in keys(Θ) && (n_constr_Θ += size(Θ.A, 2))
-    :ub in keys(Θ) && (n_constr_Θ += nth)
-    :lb in keys(Θ) && (n_constr_Θ += nth)
-    A_Θ = [Θ.A'; Matrix{Float64}(I(nth)); -Matrix{Float64}(I(nth))]
-    b_Θ = [Θ.b; Θ.ub; -Θ.lb]
-    A_lifted = [-mpQP.B[1:end-1, :]' mpQP.A; A_Θ zeros(n_constr_Θ, nx)]
-    B_lifted = [mpQP.B[end, :]; b_Θ]
-    x, _, exitflag, info = DAQPBase.quadprog(zeros(0,0), zeros(0), A_lifted, B_lifted)
-    if exitflag != 1
-        @warn "[compute_AS0] There is no parameter in the parameter set that makes the problem feasible"
-        return nothing
+
+    θ = x[1:mpp.n_theta]
+    if(mpp isa MPVI)
+        bupper,blower = mpp.A,mpp.B'*[θ;1],fill(-1e30,size(mpp.B,2)); 
+        blower[mpp.eq_ids] = bupper[mpp.eq_ids];
+        x,λ,info = DAQPBase.solve_avi(mpp.H,mpp.F'*[θ;1],bupper,blower)
+        return info.AS;
+    else # MPQP
+        d = DAQPBase.Model();
+        DAQPBase.settings(d,Dict(:eps_prox=>1e-6)) # Since the Hessian is singular
+        DAQPBase.setup(d,mpp.H,mpp.F'*[θ;1],mpp.A,mpp.B'*[θ;1],Float64[],senses);
+        x,fval,exitflag,info = DAQPBase.solve(d);
+        return findall(abs.(info.λ).> 0)
     end
-    θ = x[1:mpQP.n_theta]
-    # Solve problem for the given θ
-    tol = 10^(-4)
-    x, r, solved = AVIsolve(mpQP.H, mpQP.F' * [θ; 1], mpQP.A, mpQP.B' * [θ; 1], max_iter=10^6, stepsize=0.9, tol=10^(-5))
-    (solved == :MaximumIterationsReached) && @warn "[compute_AS0] Using inaccurate AVI solution"
-    active_set = findall(mpQP.A * x .>= mpQP.B' * [θ; 1] .- tol)
-    return active_set
 end
 ## Get CRs 
 function get_critical_regions(sol::Solution)
