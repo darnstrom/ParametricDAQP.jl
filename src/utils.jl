@@ -445,6 +445,12 @@ function get_ignore_masks(mpp,Θ,UIntX,ws)
     feas_ws = DAQPBase.Model()
     DAQPBase.setup(feas_ws,zeros(0,0),zeros(0),Alift,blift,Float64[],senses)
     for (i,j) in Iterators.product(constr_cands,constr_cands)
+        if mpp.bounds_table[i] == j # if bounds_table is provided no need to solve feasibile problem
+            ignore_masks[i] |= (UIntX(1) << (j-1))
+            ignore_masks[j] |= (UIntX(1) << (i-1))
+            continue
+        end
+
         j >= i  && continue ## To avoid permutations and i == j
         senses[j] = senses[i] =  DAQPBase.EQUALITY
         DAQPBase.update(feas_ws,nothing,nothing,nothing,nothing,nothing,senses)
