@@ -426,26 +426,21 @@ function get_lims(A,b,W,out_inds)
     end
     return zlims
 end
-## Do pre-pruning to deterimne infeasible pairs
+## Do pre-pruning to determine infeasible pairs
 function get_ignore_masks(mpp,Θ,UIntX,ws)
-    if (mpp isa MPLDP)
-        A,B = mpp.M,mpp.d
-    else
-        A,B = mpp.A,mpp.B 
-    end
+    A,B = (mpp isa MPLDP) ? (mpp.M,mpp.d) : (mpp.A,mpp.B) 
     m = size(B,2)
     Alift = [-B[1:end-1,:]' A; Θ.A' zeros(length(Θ.b),mpp.n)]
     blift = [B[end,:];Θ.b]
     senses = zeros(Cint,m+length(Θ.b));
     senses[mpp.eq_ids] .= DAQPBase.EQUALITY
-    # Solve lifted feasibility problem in (x,θ)-space to find initial point 
 
     ignore_masks = zeros(UIntX,m)
     constr_cands = setdiff(1:m,mpp.eq_ids)
     feas_ws = DAQPBase.Model()
     DAQPBase.setup(feas_ws,zeros(0,0),zeros(0),Alift,blift,Float64[],senses)
     for (i,j) in Iterators.product(constr_cands,constr_cands)
-        if mpp.bounds_table[i] == j # if bounds_table is provided no need to solve feasibile problem
+        if mpp.bounds_table[i] == j # if bounds_table is provided no need to solve feasibility problem
             ignore_masks[i] |= (UIntX(1) << (j-1))
             ignore_masks[j] |= (UIntX(1) << (i-1))
             continue
@@ -454,6 +449,7 @@ function get_ignore_masks(mpp,Θ,UIntX,ws)
         j >= i  && continue ## To avoid permutations and i == j
         senses[j] = senses[i] =  DAQPBase.EQUALITY
         DAQPBase.update(feas_ws,nothing,nothing,nothing,nothing,nothing,senses)
+        # Solve lifted feasibility problem in (x,θ)-space to find initial point 
         x,_,exitflag,info= DAQPBase.quadprog(zeros(0,0),zeros(0),Alift,blift,Float64[],senses);
         ws.nLPs+=1
         if exitflag < 0  
