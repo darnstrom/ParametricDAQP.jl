@@ -1,6 +1,6 @@
 ## mpsolve 
 # Compute the explicit solution to multi-parameteric QP
-function mpsolve(mpQP,Θ;opts=nothing, AS0 = nothing) # bounds_table as option
+function mpsolve(mpQP,Θ;opts=nothing, AS0 = nothing)
     opts = Settings(opts)
     # Hande bounds 
     Δb = Θ.ub-Θ.lb 
@@ -91,6 +91,7 @@ function mpdaqp_explicit(prob,Θ,AS0;opts = Settings())
     push!(ws.explored,as0)
     j = 0
 
+    ignore_masks = get_ignore_masks(prob,Θ,typeof(as0),ws)
 
     # Start exploration 
     while(!isempty(ws.S) || !isempty(ws.Sdown) || !isempty(ws.Sup))
@@ -106,7 +107,7 @@ function mpdaqp_explicit(prob,Θ,AS0;opts = Settings())
         end
 
         while(length(ws.S) < opts.chunk_size && !isempty(ws.Sdown)) # First try to move down...
-            explore_supersets(pop!(ws.Sdown),ws,id_cands,ws.S,prob.bounds_table)
+            explore_supersets(pop!(ws.Sdown),ws,id_cands,ws.S,ignore_masks)
         end
         while(length(ws.S) < opts.chunk_size && !isempty(ws.Sup)) # ... then try to move up
             explore_subsets(pop!(ws.Sup),ws,id_cands,ws.S)
@@ -135,7 +136,7 @@ end
 ## Check if optimal
 function isoptimal(as,ws,prob,opts)
     # Extract AS and IS for current candidate
-    uint2as(as,ws,prob.bounds_table)
+    uint2as(as,ws)
     ws.nAS > prob.n  && return nothing,true,false # LICQ trivially broken
 
     # Compute λ and μ 
@@ -284,11 +285,11 @@ function explore_subsets(as,ws,id_cands,S)
     end
 end
 ## Explore supersets 
-function explore_supersets(as,ws,id_cands,S,bounds_table)
+function explore_supersets(as,ws,id_cands,S,ignore_masks)
     UIntX = typeof(as)
     @inbounds for i in id_cands
         mask = UIntX(1)<<(i-1);
-        as&(mask|(UIntX(1)<<(bounds_table[i]-1))) != 0 && continue
+        as&(mask|ignore_masks[i]) != 0 && continue
         #as&mask != 0 && continue
         as_new = as|mask
         if as_new ∉ ws.explored
