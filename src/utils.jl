@@ -249,7 +249,7 @@ function as2uint(AS::Vector{Int},UIntX)
 end
 
 ## extract AS and IS from unsigned int
-function uint2as(u, ws, bounds_table)
+function uint2as(u, ws)
     ws.AS .= false
     ws.IS .= true
     @inbounds for i = 1:length(ws.AS)
@@ -257,7 +257,6 @@ function uint2as(u, ws, bounds_table)
         if(u&1==1)
             ws.AS[i] = true
             ws.IS[i] = false
-            #ws.IS[i] = false;ws.IS[bounds_table[i]]=false;
         end
         u >>= 1
     end
@@ -426,4 +425,36 @@ function get_lims(A,b,W,out_inds)
         end
     end
     return zlims
+end
+## Do pre-pruning to deterimne infeasible pairs
+function get_ignore_masks(mpp,Θ,UIntX,ws)
+    if (mpp isa MPLDP)
+        A,B = mpp.M,mpp.d
+    else
+        A,B = mpp.A,mpp.B 
+    end
+    m = size(B,2)
+    Alift = [-B[1:end-1,:]' A; Θ.A' zeros(length(Θ.b),mpp.n)]
+    blift = [B[end,:];Θ.b]
+    senses = zeros(Cint,m+length(Θ.b));
+    senses[mpp.eq_ids] .= DAQPBase.EQUALITY
+    # Solve lifted feasibility problem in (x,θ)-space to find initial point 
+
+    ignore_masks = zeros(UIntX,m)
+    constr_cands = setdiff(1:m,mpp.eq_ids)
+    feas_ws = DAQPBase.Model()
+    DAQPBase.setup(feas_ws,zeros(0,0),zeros(0),Alift,blift,Float64[],senses)
+    for (i,j) in Iterators.product(constr_cands,constr_cands)
+        j >= i  && continue ## To avoid permutations and i == j
+        senses[j] = senses[i] =  DAQPBase.EQUALITY
+        DAQPBase.update(feas_ws,nothing,nothing,nothing,nothing,nothing,senses)
+        x,_,exitflag,info= DAQPBase.quadprog(zeros(0,0),zeros(0),Alift,blift,Float64[],senses);
+        ws.nLPs+=1
+        if exitflag < 0  
+            ignore_masks[i] |= (UIntX(1) << (j-1))
+            ignore_masks[j] |= (UIntX(1) << (i-1))
+        end
+        senses[j] = senses[i] = 0  # reset sense
+    end
+    return ignore_masks
 end
