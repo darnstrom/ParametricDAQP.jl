@@ -146,6 +146,7 @@ mutable struct Workspace{T<:Integer}
     x::Matrix{Float64}
     intAS::Vector{Int}
     submatrix_buffer::Vector{Float64}
+    is_equality::Vector{Bool}
 end
 
 struct Solution

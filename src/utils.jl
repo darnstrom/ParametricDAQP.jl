@@ -230,7 +230,8 @@ function setup_workspace(Θ,n_constr;opts=Settings())::Workspace
     max_radius =  isempty(Θ.ub) ? nth : nth*(maximum(Θ.ub)^2)/2;
     ws = Workspace{UIntX}(A,b,blower,zeros(Cint,m_max),0,m0,p,falses(0,0),0, 
                        UIntX[], UIntX[], UIntX[], CriticalRegion[],Set{UIntX}(),opts,
-                       falses(n_constr),falses(n_constr),0, zeros(n_constr),zeros(0,0),Int[],Float64[]);
+                       falses(n_constr),falses(n_constr),0, zeros(n_constr),zeros(0,0),Int[],
+                       Float64[],[false for _ in 1:n_constr]);
 
     sizehint!(ws.submatrix_buffer,ceil(n_constr^2/4)) #
 
