@@ -86,6 +86,7 @@ function mpdaqp_explicit(prob,Θ,AS0;opts = Settings())
 
     # Initialize
     ws=setup_workspace(Θ,m;opts);
+    ws.is_equality[prob.eq_ids] .= true
     as0 = as2uint(AS0,eltype(ws.S))
     push!(ws.S,as0)
     push!(ws.explored,as0)
@@ -147,9 +148,6 @@ function isoptimal(as,ws,prob,opts)
     reset_workspace(ws) 
     # Solve primal+dual feasibility problem 
     normalize_model(ws;eps_zero=opts.eps_zero) || return nothing,false,false;
-    # Make sure that dual variables for equality constraints are free
-    ws.sense[prob.eq_ids .+ ws.m0] .= 4
-
 
     ws.nLPs+=1
     if isfeasible(ws.DAQP_workspace, ws.m, 0)
@@ -158,11 +156,31 @@ function isoptimal(as,ws,prob,opts)
         return nothing,false,false
     end
 end
-## Update optimization model
+
 function normalize_model(ws;eps_zero=1e-12)
     norm_factor=0.0;
-    # add λ ≥ 0 to feasibility model
-    for i in (1+ws.m0: ws.m0+length(ws.AS))
+    # Active constraints
+    for i in (1+ws.m0: ws.m0+ws.nAS)
+        j = i-ws.m0
+        # Handle equalities
+        if(ws.is_equality[ws.intAS[j]])
+            ws.sense[i] = 4
+            ws.norm_factors[j] = 0.0
+            continue
+        end
+        norm_factor = norm(view(ws.Ath,:,i),2);
+        ws.norm_factors[j] = norm_factor
+        if(norm_factor>eps_zero)
+            rdiv!(view(ws.Ath,:,i),norm_factor)
+            ws.bth[i]/=norm_factor
+            ws.sense[i] = 0
+        else
+            (ws.bth[i]<-eps_zero) && return false # trivially infeasible 
+            ws.sense[i] = 4 
+        end
+    end
+    # Deactive constraints
+    for i in (1+ws.m0+ws.nAS: ws.m0+length(ws.AS))
         norm_factor = norm(view(ws.Ath,:,i),2);
         ws.norm_factors[i-ws.m0] = norm_factor
         if(norm_factor>eps_zero)
@@ -249,6 +267,7 @@ function compute_λ_and_μ(ws,prob::MPQP,opts)
     if(!issuccess(C))
         return false,true# do not explore up, explore down
     end
+    ws.intAS = findall(ws.AS)
     Rh = UpperTriangular(C.factors)
 
     xy = prob.B[:,ws.AS]/R
