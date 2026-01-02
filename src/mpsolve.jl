@@ -165,7 +165,7 @@ function normalize_model(ws;eps_zero=1e-12)
         # Handle equalities
         if(ws.is_equality[ws.intAS[j]])
             ws.sense[i] = 4
-            ws.norm_factors[j] = 0.0
+            ws.norm_factors[j] = 1.0
             continue
         end
         norm_factor = norm(view(ws.Ath,:,i),2);

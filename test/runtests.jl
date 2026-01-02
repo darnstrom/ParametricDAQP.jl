@@ -249,16 +249,35 @@ end
 
 @testset "Equality constraint" begin
     n,m,nth = 3,10,4
-    tol = 1e-5
 
     mpQP,Θ = generate_mpQP(n,m,nth)
-    mpQP = merge(mpQP,(eq_ids=[5],))
+    mpQP.senses[5] = DAQPBase.EQUALITY
 
     opts = ParametricDAQP.Settings()
+    opts.store_dual=true
     sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
     for cr in sol.CRs
         @test 5 ∈ cr.AS
     end
+    # Test for 10000 random points 
+    N = 10000
+    ths = 2*rand(nth,N).-1;
+    containment_inds = zeros(Int,N) 
+    errs_primal,errs_dual = zeros(N),zeros(N)
+    for n = 1:N
+        θ = ths[:,n]
+        inds = pointlocation(θ,sol.CRs);
+        containment_inds[n]=length(inds)
+        xsol = sol.CRs[inds[1]].z'*[θ;1]
+        λsol = sol.CRs[inds[1]].lam'*[θ;1]
+        f = mpQP.f[:,1]+mpQP.F*θ
+        b = mpQP.b[:,1]+mpQP.B*θ
+        xref,~,~,info= DAQP.quadprog(mpQP.H,f,mpQP.A,b,-1e30*ones(2m),mpQP.senses);
+        @test λsol ≈ info.λ[sol.CRs[inds[1]].AS] atol=1e-4 rtol=1e-4
+        @test xref ≈ xsol atol=1e-4 rtol=1e-4
+    end
+    @test ~any(containment_inds.==0) # No holes
+    @test sum(containment_inds.>1) < 0.01*N # Not more than 1% overlap
 end
 
 @testset "Primal degenerate LP" begin
