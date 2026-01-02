@@ -244,10 +244,11 @@ function compute_λ_and_μ(ws,prob::Union{MPLDP,MPVI},opts)
     nIS = length(ws.AS)-ws.nAS 
     resize!(ws.submatrix_buffer,ws.nAS*nIS)
     AHinvA_AI = reshape(ws.submatrix_buffer,(ws.nAS,nIS))
-    @views AHinvA_AI .= prob.AHinvA[AS,ws.IS]
+    IS = findall(ws.IS)
+    @views AHinvA_AI .= prob.AHinvA[AS,IS]
 
-    μTH .= @view prob.d[1:end-1,ws.IS]; mul!(μTH,λTH,AHinvA_AI,1,-1)
-    μC .=  @view prob.d[end,ws.IS]; mul!(μC',λC',AHinvA_AI,1,1)
+    μTH .= @view prob.d[1:end-1,IS]; mul!(μTH,λTH,AHinvA_AI,1,-1)
+    μC .=  @view prob.d[end,IS]; mul!(μC',λC',AHinvA_AI,1,1)
     return false, false
 end
 
