@@ -8,12 +8,12 @@ struct BinarySearchTree
     clipping::Matrix{Float64}
 end
 
-function get_halfplanes(CRs)
+function get_halfplanes(CRs;tol=1e-5)
     nreg = length(CRs)
     nreg == 0 && return nothing
     nth = size(CRs[1].Ath,1)
-    hps = zeros(nth+1,0)
-    reg2hp = [[] for _ in 1:nreg]
+    hps = Vector{Float64}[]
+    reg2hp = [Dict{Int,Int}() for _ in 1:nreg]
 
     for (reg_id,cr) in enumerate(CRs)
         for (i,a) = enumerate(eachcol(cr.Ath))
@@ -25,26 +25,26 @@ function get_halfplanes(CRs)
             hcand = asign*[a;cr.bth[i]]
             # Check if hcand already exists in hps
             new_hp = true
-            for (j,h) in  enumerate(eachcol(hps))
-                if(all(isapprox(h[i],hcand[i],atol=1e-5,rtol=1e-5) for i in 1:nth+1))
-                    push!(reg2hp[reg_id],(j,asign))
+            for (j,h) in  enumerate(hps)
+                if(all(isapprox(h[i],hcand[i],atol=tol,rtol=tol) for i in 1:nth+1))
+                    reg2hp[reg_id][j] = asign
                     new_hp = false
                     break;
                 end
             end
             if new_hp
-                hps = [hps hcand]
-                push!(reg2hp[reg_id],(size(hps,2),asign))
+                push!(hps, hcand)
+                reg2hp[reg_id][length(hps)]=asign
             end
         end
     end
-    return hps,reg2hp
+    return hcat(hps...),reg2hp
 end
 
 function get_feedbacks(CRs; tol=1e-5)
     isempty(CRs) && return nothing
     nth = size(CRs[1].Ath,1)
-    Z,ids = [], []
+    Z,ids = Matrix{Float64}[], Int[]
     for cr in CRs 
         id = 0 
         for (i,z) in enumerate(Z)
@@ -78,7 +78,7 @@ function classify_regions(CRs,hps, reg2hp, ws; reg_ids = nothing, hp_ids = nothi
     if !isnothing(branches)
         for i = 1:nbr
             (hid,hsign) = branches[i]
-            ws.A[:,1+i] = hsign*hps[1:nth,hid]
+            @views ws.A[:,1+i] .= hsign.*hps[1:nth,hid]
             ws.b[1+i] = hsign*hps[end,hid]-eps_gap
         end
     end
@@ -90,9 +90,9 @@ function classify_regions(CRs,hps, reg2hp, ws; reg_ids = nothing, hp_ids = nothi
 
         for (j,hj) in enumerate(hp_ids)
             # First check if the hp is a facet of the region
-            id = findfirst(x->first(x)==hj,reg2hp[i])
-            if !isnothing(id) # hp is a facet of the region
-                if last(reg2hp[i][id]) == 1
+            asign = get(reg2hp[i], hj, nothing)
+            if !isnothing(asign) # hp is a facet of the region
+                if asign == 1
                     pregs[j][i] = true
                 else
                     nregs[j][i] = true
@@ -100,16 +100,16 @@ function classify_regions(CRs,hps, reg2hp, ws; reg_ids = nothing, hp_ids = nothi
                 continue
             end
 
-            slack = isnothing(branches) ? hps[1:end-1,hj]'*CRs[i].th-hps[end,hj] : NaN
+            @views slack = isnothing(branches) ? hps[1:end-1,hj]'*CRs[i].th-hps[end,hj] : NaN
 
             # Negative
-            ws.A[:,1] = -hps[1:nth,hj]
-            ws.b[1] = -hps[end,hj]-eps_gap
+            @views ws.A[:,1] .= .-hps[1:nth,hj]
+            @views ws.b[1] = -hps[end,hj]-eps_gap
             (slack > eps_gap || isfeasible(ws.p, 1+nbr+mi, 0)) && (nregs[j][i] = true)
 
             # Positive
-            ws.A[:,1] = hps[1:nth,hj]
-            ws.b[1] = hps[end,hj]-eps_gap
+            @views ws.A[:,1] = hps[1:nth,hj]
+            @views ws.b[1] = hps[end,hj]-eps_gap
             (slack < -eps_gap || isfeasible(ws.p, 1+nbr+mi, 0)) && (pregs[j][i] = true)
         end
     end
@@ -123,16 +123,26 @@ function reduce_candidates(criteria,splits,ids)
     return min_val,splits[min_ids],ids[min_ids]
 end
 
-function get_split(CRs,hps,reg2hp,reg_ids,pregs,nregs,branches,criterions,ws;balancing_level=0)
+function get_split(CRs,hps,reg2hp,reg_ids,pregs,nregs,branches,criterions,ws,hp_ids_bit;balancing_level=0)
+    fill!(hp_ids_bit,false)
+    for i in findall(reg_ids)
+        for hp in reg2hp[i]
+            hp_ids_bit[first(hp)] = true
+        end
+    end
+    for b in branches
+        hp_ids_bit[first(b)] = false
+    end
+    hp_ids = findall(hp_ids_bit)
 
-    hp_ids = reduce(∪,Set(first.(reg2hp[i])) for i in findall(reg_ids));
-    hp_ids = collect(setdiff!(hp_ids,first(b) for b in branches))
+    #hp_ids = reduce(∪,Set(first.(reg2hp[i])) for i in findall(reg_ids));
+    #hp_ids = collect(setdiff!(hp_ids,first(b) for b in branches))
 
     splits = [(reg_ids .* nregs[i], reg_ids .* pregs[i]) for i in hp_ids]
     isempty(splits) && return hp_ids, (falses(0),falses(0))
 
     # Use heuristic to find candidates
-    if(length(branches) >= balancing_level)
+    if(length(branches) >= balancing_level || length(branches) == 0)
         min_val,splits,hp_ids = reduce_candidates(criterions[1],splits,hp_ids)
     else
         min_val = Inf
@@ -141,6 +151,7 @@ function get_split(CRs,hps,reg2hp,reg_ids,pregs,nregs,branches,criterions,ws;bal
         splits = tuple.(classify_regions(CRs,hps,reg2hp,ws;reg_ids,hp_ids,branches)...)
         for c in criterions
             min_val,splits,hp_ids = reduce_candidates(c,splits,hp_ids)
+            length(splits) == 1 && break
         end
     end
     hp_id = hp_ids[1]
@@ -185,7 +196,7 @@ function get_duals(CRs,sol)
 end
 
 function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals=1e12,
-        dual=false, bfs=true, clipping=true, balancing_level=0)
+        dual=false, bfs=true, clipping=true, balancing_level=0, hp_tol = 1e-5)
     if sol.status != :Solved
         verbose > 0 && @warn "Cannot build binary search tree. Solution status: $(sol.status)"
         return nothing
@@ -195,12 +206,13 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
     CRs = clipping ? get_unsaturated(sol.CRs) : sol.CRs
 
     # Get halfplanes and feedbacks
-    hps,reg2hp = get_halfplanes(CRs)
+    hps,reg2hp = get_halfplanes(CRs;tol=hp_tol)
     fbs, fb_ids = get_feedbacks(CRs)
 
+    nfbs,Nr = length(fbs),length(CRs)
     # Approximate number of real numbers
-    n_reals = length(hps) + length(fbs)*length(fbs[1])
-    dual && (n_reals += length(CRs)*(sol.problem.n_theta+1)*length(sol.problem.norm_factors))
+    n_reals = length(hps) + nfbs*length(fbs[1])
+    dual && (n_reals += Nr*(sol.problem.n_theta+1)*length(sol.problem.norm_factors))
     if n_reals > max_reals
         verbose > 0 && @warn "Memory limit for real numbers (n_reals = $n_reals, max_reals = $max_reals) reached"
         return nothing
@@ -226,10 +238,16 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
         end
         return sum(seen_buffer)
     end
+
     seen_buffer = [false for _ in 1:length(fbs)]
+    hp_ids_bit = falses(size(hps,2))
+
+    main_criterion = (Nr == nfbs) ? s->max(sum.(s)...) : s->get_extream_fbs(s,fb_ids,seen_buffer,max)
+
 
     get_fbid = s->Set{Int}(fb_ids[s])
-    criterions = dual ? [x->max(sum.(x)...)] :  [s->get_extream_fbs(s,fb_ids,seen_buffer,max),
+    criterions = dual ? [x->max(sum.(x)...)] :  [main_criterion,
+                                                 s->sum(s[1] .& s[2]),
                                                  s->max(sum.(s)...),
                                                  s->get_extream_fbs(s,fb_ids,seen_buffer,min)]
     # Start exploration
@@ -241,8 +259,8 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
         reg_ids, branches, self_id = tree_pop!(U)
         depth = max(depth,length(branches))
         # Get halfplane to cut
-        hp_id, (new_nregs, new_pregs) = get_split(CRs,hps,reg2hp,reg_ids,pregs,nregs,branches,criterions,ws;
-                                                  balancing_level)
+        hp_id, (new_nregs, new_pregs) = get_split(CRs,hps,reg2hp,reg_ids,pregs,nregs,branches,criterions,ws,
+                                                  hp_ids_bit; balancing_level)
         if isempty(hp_id) # Should never happen, but might due to numerics
             jump_list[self_id] = 0 # pointing at root node -> leaf
             hp_list[self_id] = first(get_fbid(reg_ids))
