@@ -12,7 +12,7 @@ function get_halfplanes(CRs;tol=1e-5)
     nreg = length(CRs)
     nreg == 0 && return nothing
     nth = size(CRs[1].Ath,1)
-    hps = zeros(nth+1,0)
+    hps = Vector{Float64}[]
     reg2hp = [Dict{Int,Int}() for _ in 1:nreg]
 
     for (reg_id,cr) in enumerate(CRs)
@@ -25,7 +25,7 @@ function get_halfplanes(CRs;tol=1e-5)
             hcand = asign*[a;cr.bth[i]]
             # Check if hcand already exists in hps
             new_hp = true
-            for (j,h) in  enumerate(eachcol(hps))
+            for (j,h) in  enumerate(hps)
                 if(all(isapprox(h[i],hcand[i],atol=tol,rtol=tol) for i in 1:nth+1))
                     reg2hp[reg_id][j] = asign
                     new_hp = false
@@ -33,12 +33,12 @@ function get_halfplanes(CRs;tol=1e-5)
                 end
             end
             if new_hp
-                hps = [hps hcand]
-                reg2hp[reg_id][size(hps,2)]=asign
+                push!(hps, hcand)
+                reg2hp[reg_id][length(hps)]=asign
             end
         end
     end
-    return hps,reg2hp
+    return hcat(hps...),reg2hp
 end
 
 function get_feedbacks(CRs; tol=1e-5)
@@ -78,7 +78,7 @@ function classify_regions(CRs,hps, reg2hp, ws; reg_ids = nothing, hp_ids = nothi
     if !isnothing(branches)
         for i = 1:nbr
             (hid,hsign) = branches[i]
-            ws.A[:,1+i] = hsign*hps[1:nth,hid]
+            @views ws.A[:,1+i] .= hsign.*hps[1:nth,hid]
             ws.b[1+i] = hsign*hps[end,hid]-eps_gap
         end
     end
