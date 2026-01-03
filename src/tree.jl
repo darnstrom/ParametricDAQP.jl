@@ -13,7 +13,7 @@ function get_halfplanes(CRs;tol=1e-5)
     nreg == 0 && return nothing
     nth = size(CRs[1].Ath,1)
     hps = zeros(nth+1,0)
-    reg2hp = [[] for _ in 1:nreg]
+    reg2hp = [Tuple{Int,Int}[] for _ in 1:nreg]
 
     for (reg_id,cr) in enumerate(CRs)
         for (i,a) = enumerate(eachcol(cr.Ath))
@@ -123,10 +123,20 @@ function reduce_candidates(criteria,splits,ids)
     return min_val,splits[min_ids],ids[min_ids]
 end
 
-function get_split(CRs,hps,reg2hp,reg_ids,pregs,nregs,branches,criterions,ws;balancing_level=0)
+function get_split(CRs,hps,reg2hp,reg_ids,pregs,nregs,branches,criterions,ws,hp_ids_bit;balancing_level=0)
+    fill!(hp_ids_bit,false)
+    for i in findall(reg_ids)
+        for hp in reg2hp[i]
+            hp_ids_bit[first(hp)] = true
+        end
+    end
+    for b in branches
+        hp_ids_bit[first(b)] = false
+    end
+    hp_ids = findall(hp_ids_bit)
 
-    hp_ids = reduce(∪,Set(first.(reg2hp[i])) for i in findall(reg_ids));
-    hp_ids = collect(setdiff!(hp_ids,first(b) for b in branches))
+    #hp_ids = reduce(∪,Set(first.(reg2hp[i])) for i in findall(reg_ids));
+    #hp_ids = collect(setdiff!(hp_ids,first(b) for b in branches))
 
     splits = [(reg_ids .* nregs[i], reg_ids .* pregs[i]) for i in hp_ids]
     isempty(splits) && return hp_ids, (falses(0),falses(0))
@@ -199,9 +209,10 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
     hps,reg2hp = get_halfplanes(CRs;tol=hp_tol)
     fbs, fb_ids = get_feedbacks(CRs)
 
+    nfbs,Nr = length(fbs),length(CRs)
     # Approximate number of real numbers
-    n_reals = length(hps) + length(fbs)*length(fbs[1])
-    dual && (n_reals += length(CRs)*(sol.problem.n_theta+1)*length(sol.problem.norm_factors))
+    n_reals = length(hps) + nfbs*length(fbs[1])
+    dual && (n_reals += Nr*(sol.problem.n_theta+1)*length(sol.problem.norm_factors))
     if n_reals > max_reals
         verbose > 0 && @warn "Memory limit for real numbers (n_reals = $n_reals, max_reals = $max_reals) reached"
         return nothing
@@ -227,10 +238,15 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
         end
         return sum(seen_buffer)
     end
+
     seen_buffer = [false for _ in 1:length(fbs)]
+    hp_ids_bit = falses(size(hps,2))
+
+    main_criterion = (Nr == nfbs) ? s->max(sum.(s)...) : s->get_extream_fbs(s,fb_ids,seen_buffer,max)
+
 
     get_fbid = s->Set{Int}(fb_ids[s])
-    criterions = dual ? [x->max(sum.(x)...)] :  [s->get_extream_fbs(s,fb_ids,seen_buffer,max),
+    criterions = dual ? [x->max(sum.(x)...)] :  [main_criterion,
                                                  s->sum(s[1] .& s[2]),
                                                  s->max(sum.(s)...),
                                                  s->get_extream_fbs(s,fb_ids,seen_buffer,min)]
@@ -243,8 +259,8 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
         reg_ids, branches, self_id = tree_pop!(U)
         depth = max(depth,length(branches))
         # Get halfplane to cut
-        hp_id, (new_nregs, new_pregs) = get_split(CRs,hps,reg2hp,reg_ids,pregs,nregs,branches,criterions,ws;
-                                                  balancing_level)
+        hp_id, (new_nregs, new_pregs) = get_split(CRs,hps,reg2hp,reg_ids,pregs,nregs,branches,criterions,ws,
+                                                  hp_ids_bit; balancing_level)
         if isempty(hp_id) # Should never happen, but might due to numerics
             jump_list[self_id] = 0 # pointing at root node -> leaf
             hp_list[self_id] = first(get_fbid(reg_ids))
