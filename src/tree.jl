@@ -13,7 +13,7 @@ function get_halfplanes(CRs;tol=1e-5)
     nreg == 0 && return nothing
     nth = size(CRs[1].Ath,1)
     hps = zeros(nth+1,0)
-    reg2hp = [Tuple{Int,Int}[] for _ in 1:nreg]
+    reg2hp = [Dict{Int,Int}() for _ in 1:nreg]
 
     for (reg_id,cr) in enumerate(CRs)
         for (i,a) = enumerate(eachcol(cr.Ath))
@@ -27,14 +27,14 @@ function get_halfplanes(CRs;tol=1e-5)
             new_hp = true
             for (j,h) in  enumerate(eachcol(hps))
                 if(all(isapprox(h[i],hcand[i],atol=tol,rtol=tol) for i in 1:nth+1))
-                    push!(reg2hp[reg_id],(j,asign))
+                    reg2hp[reg_id][j] = asign
                     new_hp = false
                     break;
                 end
             end
             if new_hp
                 hps = [hps hcand]
-                push!(reg2hp[reg_id],(size(hps,2),asign))
+                reg2hp[reg_id][size(hps,2)]=asign
             end
         end
     end
@@ -90,9 +90,9 @@ function classify_regions(CRs,hps, reg2hp, ws; reg_ids = nothing, hp_ids = nothi
 
         for (j,hj) in enumerate(hp_ids)
             # First check if the hp is a facet of the region
-            id = findfirst(x->first(x)==hj,reg2hp[i])
-            if !isnothing(id) # hp is a facet of the region
-                if last(reg2hp[i][id]) == 1
+            asign = get(reg2hp[i], hj, nothing)
+            if !isnothing(asign) # hp is a facet of the region
+                if asign == 1
                     pregs[j][i] = true
                 else
                     nregs[j][i] = true
@@ -100,16 +100,16 @@ function classify_regions(CRs,hps, reg2hp, ws; reg_ids = nothing, hp_ids = nothi
                 continue
             end
 
-            slack = isnothing(branches) ? hps[1:end-1,hj]'*CRs[i].th-hps[end,hj] : NaN
+            @views slack = isnothing(branches) ? hps[1:end-1,hj]'*CRs[i].th-hps[end,hj] : NaN
 
             # Negative
-            ws.A[:,1] = -hps[1:nth,hj]
-            ws.b[1] = -hps[end,hj]-eps_gap
+            @views ws.A[:,1] .= .-hps[1:nth,hj]
+            @views ws.b[1] = -hps[end,hj]-eps_gap
             (slack > eps_gap || isfeasible(ws.p, 1+nbr+mi, 0)) && (nregs[j][i] = true)
 
             # Positive
-            ws.A[:,1] = hps[1:nth,hj]
-            ws.b[1] = hps[end,hj]-eps_gap
+            @views ws.A[:,1] = hps[1:nth,hj]
+            @views ws.b[1] = hps[end,hj]-eps_gap
             (slack < -eps_gap || isfeasible(ws.p, 1+nbr+mi, 0)) && (pregs[j][i] = true)
         end
     end
