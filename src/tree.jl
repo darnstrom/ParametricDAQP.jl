@@ -8,7 +8,7 @@ struct BinarySearchTree
     clipping::Matrix{Float64}
 end
 
-function get_halfplanes(CRs)
+function get_halfplanes(CRs;tol=1e-5)
     nreg = length(CRs)
     nreg == 0 && return nothing
     nth = size(CRs[1].Ath,1)
@@ -26,7 +26,7 @@ function get_halfplanes(CRs)
             # Check if hcand already exists in hps
             new_hp = true
             for (j,h) in  enumerate(eachcol(hps))
-                if(all(isapprox(h[i],hcand[i],atol=1e-5,rtol=1e-5) for i in 1:nth+1))
+                if(all(isapprox(h[i],hcand[i],atol=tol,rtol=tol) for i in 1:nth+1))
                     push!(reg2hp[reg_id],(j,asign))
                     new_hp = false
                     break;
@@ -44,7 +44,7 @@ end
 function get_feedbacks(CRs; tol=1e-5)
     isempty(CRs) && return nothing
     nth = size(CRs[1].Ath,1)
-    Z,ids = [], []
+    Z,ids = Matrix{Float64}[], Int[]
     for cr in CRs 
         id = 0 
         for (i,z) in enumerate(Z)
@@ -132,7 +132,7 @@ function get_split(CRs,hps,reg2hp,reg_ids,pregs,nregs,branches,criterions,ws;bal
     isempty(splits) && return hp_ids, (falses(0),falses(0))
 
     # Use heuristic to find candidates
-    if(length(branches) >= balancing_level)
+    if(length(branches) >= balancing_level || length(branches) == 0)
         min_val,splits,hp_ids = reduce_candidates(criterions[1],splits,hp_ids)
     else
         min_val = Inf
@@ -141,6 +141,7 @@ function get_split(CRs,hps,reg2hp,reg_ids,pregs,nregs,branches,criterions,ws;bal
         splits = tuple.(classify_regions(CRs,hps,reg2hp,ws;reg_ids,hp_ids,branches)...)
         for c in criterions
             min_val,splits,hp_ids = reduce_candidates(c,splits,hp_ids)
+            length(splits) == 1 && break
         end
     end
     hp_id = hp_ids[1]
@@ -185,7 +186,7 @@ function get_duals(CRs,sol)
 end
 
 function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals=1e12,
-        dual=false, bfs=true, clipping=true, balancing_level=0)
+        dual=false, bfs=true, clipping=true, balancing_level=0, hp_tol = 1e-5)
     if sol.status != :Solved
         verbose > 0 && @warn "Cannot build binary search tree. Solution status: $(sol.status)"
         return nothing
@@ -195,7 +196,7 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
     CRs = clipping ? get_unsaturated(sol.CRs) : sol.CRs
 
     # Get halfplanes and feedbacks
-    hps,reg2hp = get_halfplanes(CRs)
+    hps,reg2hp = get_halfplanes(CRs;tol=hp_tol)
     fbs, fb_ids = get_feedbacks(CRs)
 
     # Approximate number of real numbers
@@ -230,6 +231,7 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
 
     get_fbid = s->Set{Int}(fb_ids[s])
     criterions = dual ? [x->max(sum.(x)...)] :  [s->get_extream_fbs(s,fb_ids,seen_buffer,max),
+                                                 s->sum(s[1] .& s[2]),
                                                  s->max(sum.(s)...),
                                                  s->get_extream_fbs(s,fb_ids,seen_buffer,min)]
     # Start exploration
