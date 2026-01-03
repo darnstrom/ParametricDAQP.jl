@@ -196,7 +196,7 @@ function get_duals(CRs,sol)
 end
 
 function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals=1e12,
-        dual=false, bfs=true, clipping=true, balancing_level=0, hp_tol = 1e-5)
+        dual=false, bfs=true, clipping=false, balancing_level=0, hp_tol = 1e-5)
     if sol.status != :Solved
         verbose > 0 && @warn "Cannot build binary search tree. Solution status: $(sol.status)"
         return nothing
