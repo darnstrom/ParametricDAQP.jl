@@ -159,9 +159,6 @@ function get_split(CRs,hps,reg2hp,reg_ids,pregs,nregs,branches,criterions,ws,hp_
     end
     hp_ids = findall(hp_ids_bit)
 
-    #hp_ids = reduce(∪,Set(first.(reg2hp[i])) for i in findall(reg_ids));
-    #hp_ids = collect(setdiff!(hp_ids,first(b) for b in branches))
-
     splits = [(reg_ids .* nregs[i], reg_ids .* pregs[i]) for i in hp_ids]
     isempty(splits) && return hp_ids, (falses(0),falses(0))
 
@@ -291,7 +288,6 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
             @debug "Superfluous branch -> might be due to bad numerics"
             continue
         end
-        #vals = [c((new_nregs,new_pregs)) for c in criterions]
 
         # Update tree for current node
         next_id = length(hp_list)+1
