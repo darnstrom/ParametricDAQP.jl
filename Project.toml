@@ -8,6 +8,7 @@ BitIntegers = "c3b6d118-76ef-56ca-8cc7-ebb389d030a1"
 DAQPBase = "833476c3-a8c0-4073-9b64-6473509843fe"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 PolyDAQP = "be5c70c9-e47a-4559-82a9-cba980583202"
+ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
 RecipesBase = "3cdcf5f2-1ef4-517c-9805-6587b60abb01"
 
 [weakdeps]
@@ -22,13 +23,14 @@ MathOptInterfaceExt = ["MathOptInterface"]
 BitIntegers = "0.3.5"
 DAQPBase = "~0.3.3"
 PolyDAQP = "~0.3.6"
+ProgressMeter = "1.11.0"
 RecipesBase = "1.3.0"
 julia = "1.6"
 
 [extras]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
-BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 
 [targets]
-test = ["Test", "Random","BenchmarkTools"]
+test = ["Test", "Random", "BenchmarkTools"]
