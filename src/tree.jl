@@ -279,6 +279,10 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
     while !isempty(U)
         reg_ids, branches, self_id = tree_pop!(U)
         depth = max(depth,length(branches))
+        (verbose > 0) && print("\r>>\
+                               |# nodes: $(length(jump_list))\
+                               |depth: $depth\
+                               |pending : $(length(U))|         ")
         # Get halfplane to cut
         hp_id, (new_nregs, new_pregs) = get_split(CRs,hps,reg2hp,reg_ids,pregs,nregs,branches,criterions,ws,
                                                   hp_ids_bit; balancing_level)
@@ -317,6 +321,7 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
         end
     end
 
+    verbose > 0 && println("")
     # Remove superfluous HPs
     hps,hp_list= remove_redundant_hps(jump_list,hp_list,hps)
 
