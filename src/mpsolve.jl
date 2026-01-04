@@ -215,7 +215,8 @@ function compute_λ_and_μ(ws,prob::Union{MPLDP,MPVI},opts)
         end
     else
         resize!(ws.submatrix_buffer,ws.nAS^2)
-        AHinvA_AA = reshape(ws.submatrix_buffer,(ws.nAS,ws.nAS))
+        #AHinvA_AA = reshape(ws.submatrix_buffer,(ws.nAS,ws.nAS)) # Works for Julia > 1.10
+        AHinvA_AA = reshape(view(ws.submatrix_buffer,1:ws.nAS^2),(ws.nAS,ws.nAS))
         @views AHinvA_AA .= prob.AHinvA[ws.AS,ws.AS]
         C = cholesky!(AHinvA_AA, opts.pivot ? RowMaximum() : NoPivot(), check=false)
         !issuccess(C) && return true, false
@@ -243,7 +244,8 @@ function compute_λ_and_μ(ws,prob::Union{MPLDP,MPVI},opts)
 
     nIS = length(ws.AS)-ws.nAS 
     resize!(ws.submatrix_buffer,ws.nAS*nIS)
-    AHinvA_AI = reshape(ws.submatrix_buffer,(ws.nAS,nIS))
+    #AHinvA_AI = reshape(ws.submatrix_buffer,(ws.nAS,nIS)) # Works for Julia > 1.10
+    AHinvA_AI = reshape(view(ws.submatrix_buffer,1:ws.nAS*nIS),(ws.nAS,nIS))
     IS = findall(ws.IS)
     @views AHinvA_AI .= prob.AHinvA[AS,IS]
 

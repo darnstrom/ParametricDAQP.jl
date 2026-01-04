@@ -233,7 +233,7 @@ function setup_workspace(Θ,n_constr;opts=Settings())::Workspace
                        falses(n_constr),falses(n_constr),0, zeros(n_constr),zeros(0,0),Int[],
                        Float64[],[false for _ in 1:n_constr]);
 
-    sizehint!(ws.submatrix_buffer,ceil(n_constr^2/4)) #
+    sizehint!(ws.submatrix_buffer,Int(ceil(n_constr^2/4)))
 
     DAQPBase.init_c_workspace_ldp(p,ws.Ath,ws.bth,ws.bth_lower,ws.sense;max_radius)
     settings(ws.DAQP_workspace,opts.daqp_settings)
