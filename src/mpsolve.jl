@@ -92,7 +92,7 @@ function mpdaqp_explicit(prob,Θ,AS0;opts = Settings())
     push!(ws.explored,as0)
     j = 0
 
-    ignore_masks = get_ignore_masks(prob,Θ,typeof(as0),ws)
+    ignore_masks = get_ignore_masks(prob,Θ,typeof(as0),id_cands,ws)
 
     # Start exploration 
     while(!isempty(ws.S) || !isempty(ws.Sdown) || !isempty(ws.Sup))
@@ -310,10 +310,8 @@ end
 function explore_supersets(as,ws,id_cands,S,ignore_masks)
     UIntX = typeof(as)
     @inbounds for i in id_cands
-        mask = UIntX(1)<<(i-1);
-        as&(mask|ignore_masks[i]) != 0 && continue
-        #as&mask != 0 && continue
-        as_new = as|mask
+        as&ignore_masks[i] != 0 && continue
+        as_new = as|(UIntX(1)<<(i-1));
         if as_new ∉ ws.explored
             push!(ws.explored,as_new) # Mark as explored
             push!(S,as_new) # Put on stack

@@ -428,7 +428,7 @@ function get_lims(A,b,W,out_inds)
     return zlims
 end
 ## Do pre-pruning to determine infeasible pairs
-function get_ignore_masks(mpp,Θ,UIntX,ws)
+function get_ignore_masks(mpp,Θ,UIntX,id_cands,ws)
     A,B = (mpp isa MPLDP) ? (mpp.M,mpp.d) : (mpp.A,mpp.B) 
     m = size(B,2)
     Alift = [-B[1:end-1,:]' A; Θ.A' zeros(length(Θ.b),mpp.n)]
@@ -437,11 +437,10 @@ function get_ignore_masks(mpp,Θ,UIntX,ws)
     senses[mpp.eq_ids] .= DAQPBase.EQUALITY
 
     ignore_masks = zeros(UIntX,m)
-    constr_cands = setdiff(1:m,mpp.eq_ids)
     feas_ws = DAQPBase.Model()
     DAQPBase.setup(feas_ws,zeros(0,0),zeros(0),Alift,blift,Float64[],senses)
-    for (i,j) in Iterators.product(constr_cands,constr_cands)
-        if mpp.bounds_table[i] == j # if bounds_table is provided no need to solve feasibility problem
+    for (i,j) in Iterators.product(id_cands,id_cands)
+        if i==j || mpp.bounds_table[i] == j # if bounds_table is provided no need to solve feasibility problem
             ignore_masks[i] |= (UIntX(1) << (j-1))
             ignore_masks[j] |= (UIntX(1) << (i-1))
             continue
