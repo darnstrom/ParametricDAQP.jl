@@ -1,7 +1,7 @@
 module ParametricDAQP
 
 using LinearAlgebra, DAQPBase, PolyDAQP
-using BitIntegers
+using BitIntegers, ProgressMeter
 export MPLDP
 
 include("types.jl")

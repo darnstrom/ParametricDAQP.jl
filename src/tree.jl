@@ -8,14 +8,14 @@ struct BinarySearchTree
     clipping::Matrix{Float64}
 end
 
-function get_halfplanes(CRs;tol=1e-5)
+function get_halfplanes(CRs;tol=1e-5, verbose=1)
     nreg = length(CRs)
     nreg == 0 && return nothing
     nth = size(CRs[1].Ath,1)
     hps = Vector{Float64}[]
     reg2hp = [Dict{Int,Int}() for _ in 1:nreg]
 
-    for (reg_id,cr) in enumerate(CRs)
+    @showprogress enabled=(verbose > 0) desc="Getting halfplanes" for (reg_id,cr) in enumerate(CRs)
         for (i,a) = enumerate(eachcol(cr.Ath))
             # Disregard box bounds
             cr.bth[i] == 1 && sum(!=(0),a) == 1 && continue
@@ -41,11 +41,11 @@ function get_halfplanes(CRs;tol=1e-5)
     return hcat(hps...),reg2hp
 end
 
-function get_feedbacks(CRs; tol=1e-5)
+function get_feedbacks(CRs; tol=1e-5, verbose = 1)
     isempty(CRs) && return nothing
     nth = size(CRs[1].Ath,1)
     Z,ids = Matrix{Float64}[], Int[]
-    for cr in CRs 
+    @showprogress enabled = (verbose > 0) desc="Getting affine mappings" for cr in CRs 
         id = 0 
         for (i,z) in enumerate(Z)
             if all(isapprox.(cr.z,z,atol=tol, rtol=tol))
@@ -63,7 +63,7 @@ function get_feedbacks(CRs; tol=1e-5)
 end
 
 # TODO: Can be cut in half by using points in CR 
-function classify_regions(CRs,hps, reg2hp, ws; reg_ids = nothing, hp_ids = nothing, branches = nothing)
+function classify_regions(CRs,hps, reg2hp, ws; reg_ids = nothing, hp_ids = nothing, branches = nothing, verbose=1)
     eps_gap=1e-6+1e-12
     reg_ids = isnothing(reg_ids) ?  (1:length(CRs)) : findall(reg_ids)
     isnothing(hp_ids) && (hp_ids = 1:size(hps,2))
@@ -83,7 +83,7 @@ function classify_regions(CRs,hps, reg2hp, ws; reg_ids = nothing, hp_ids = nothi
         end
     end
 
-    for i in reg_ids
+    @showprogress enabled = (verbose > 0) desc="Presplitting" for i in reg_ids
         mi = length(CRs[i].bth)
         ws.A[:,1+nbr+1:1+nbr+mi] = CRs[i].Ath
         ws.b[1+nbr+1:1+nbr+mi] = CRs[i].bth .-eps_gap
@@ -148,7 +148,7 @@ function get_split(CRs,hps,reg2hp,reg_ids,pregs,nregs,branches,criterions,ws,hp_
         min_val = Inf
     end
     if length(branches) > 0 && min_val > 1# Compute the actual split
-        splits = tuple.(classify_regions(CRs,hps,reg2hp,ws;reg_ids,hp_ids,branches)...)
+        splits = tuple.(classify_regions(CRs,hps,reg2hp,ws;reg_ids,hp_ids,branches,verbose=0)...)
         for c in criterions
             min_val,splits,hp_ids = reduce_candidates(c,splits,hp_ids)
             length(splits) == 1 && break
@@ -206,8 +206,8 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
     CRs = clipping ? get_unsaturated(sol.CRs) : sol.CRs
 
     # Get halfplanes and feedbacks
-    hps,reg2hp = get_halfplanes(CRs;tol=hp_tol)
-    fbs, fb_ids = get_feedbacks(CRs)
+    hps,reg2hp = get_halfplanes(CRs;tol=hp_tol,verbose)
+    fbs, fb_ids = get_feedbacks(CRs;verbose)
 
     nfbs,Nr = length(fbs),length(CRs)
     # Approximate number of real numbers
