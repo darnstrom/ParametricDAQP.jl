@@ -8,61 +8,85 @@ struct BinarySearchTree
     clipping::Matrix{Float64}
 end
 
-function get_halfplanes(CRs;tol=1e-5, verbose=1)
+function get_halfplanes(CRs; tol=1e-5)
     nreg = length(CRs)
     nreg == 0 && return nothing
-    nth = size(CRs[1].Ath,1)
-    hps = Vector{Float64}[]
-    reg2hp = [Dict{Int,Int}() for _ in 1:nreg]
 
-    @showprogress enabled=(verbose > 0) desc="Getting halfplanes" for (reg_id,cr) in enumerate(CRs)
-        for (i,a) = enumerate(eachcol(cr.Ath))
-            # Disregard box bounds
-            cr.bth[i] == 1 && sum(!=(0),a) == 1 && continue
-            nz_id = findfirst(!=(0),a)
+    dim = size(CRs[1].Ath, 1) + 1
+
+    hp_map = Dict{NTuple{dim, Int}, Int}()
+    hps = Vector{Vector{Float64}}()
+    reg2hp = [Dict{Int, Int}() for _ in 1:nreg]
+
+    # Reusable scratch buffer
+    grid_buffer = Vector{Int}(undef, dim)
+
+    for (reg_id, cr) in enumerate(CRs)
+        Ath,bth = cr.Ath,cr.bth
+        for i in 1:size(Ath, 2)
+            a = @view Ath[:, i]
+            b = bth[i]
+
+            # Box bound check
+            b == 1 && count(!iszero, a) == 1 && continue
+
+            nz_id = findfirst(!iszero, a)
             isnothing(nz_id) && continue
             asign = sign(a[nz_id])
-            hcand = asign*[a;cr.bth[i]]
-            # Check if hcand already exists in hps
-            new_hp = true
-            for (j,h) in  enumerate(hps)
-                if(all(isapprox(h[i],hcand[i],atol=tol,rtol=tol) for i in 1:nth+1))
-                    reg2hp[reg_id][j] = asign
-                    new_hp = false
-                    break;
-                end
+
+            # Fill buffer
+            for j in 1:(dim-1)
+                grid_buffer[j] = Int(floor((a[j] * asign) / tol))
             end
-            if new_hp
+            grid_buffer[end] = Int(floor((b * asign) / tol))
+
+            key = Tuple(grid_buffer)
+
+            # Check if it exists
+            hp_idx = get(hp_map, key, 0)
+
+            if hp_idx == 0
+                hp_idx = length(hps) + 1
+                hp_map[key] = hp_idx
+
+                hcand = vcat(a, b) .* asign
                 push!(hps, hcand)
-                reg2hp[reg_id][length(hps)]=asign
             end
+
+            reg2hp[reg_id][hp_idx] = Int(asign)
         end
     end
-    return hcat(hps...),reg2hp
+
+    return hcat(hps...), reg2hp
 end
 
-function get_feedbacks(CRs; tol=1e-5, verbose = 1)
+
+function get_feedbacks(CRs; tol=1e-5)
     isempty(CRs) && return nothing
-    nth = size(CRs[1].Ath,1)
-    Z,ids = Matrix{Float64}[], Int[]
-    @showprogress enabled = (verbose > 0) desc="Getting affine mappings" for cr in CRs 
-        id = 0 
-        for (i,z) in enumerate(Z)
-            if all(isapprox.(cr.z,z,atol=tol, rtol=tol))
-                id = i
-                push!(ids,id)
-                break
-            end
+
+    z_length = prod(size(CRs[1].z))
+
+    z_map = Dict{NTuple{z_length, Int}, Int}()
+    Z = Matrix{Float64}[]
+    ids = Int[]
+    sizehint!(ids, length(CRs)) # Pre-allocate space for ids
+
+    for cr in CRs
+        z_grid_tuple = ntuple(i -> Int(floor(cr.z[i] / tol)), z_length)
+        id = get(z_map, z_grid_tuple, 0)
+
+        if id == 0 # New unique mapping found
+            push!(Z, cr.z)
+            id = length(Z)
+            z_map[z_grid_tuple] = id
         end
-        if id == 0 # No duplicate
-            push!(Z,cr.z)
-            push!(ids,length(Z))
-        end
+
+        push!(ids, id)
     end
-    return Z,ids
+
+    return Z, ids
 end
 
-# TODO: Can be cut in half by using points in CR 
 function classify_regions(CRs,hps, reg2hp, ws; reg_ids = nothing, hp_ids = nothing, branches = nothing, verbose=1)
     eps_gap=1e-6+1e-12
     reg_ids = isnothing(reg_ids) ?  (1:length(CRs)) : findall(reg_ids)
@@ -196,7 +220,7 @@ function get_duals(CRs,sol)
 end
 
 function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals=1e12,
-        dual=false, bfs=true, clipping=false, balancing_level=0, hp_tol = 1e-5)
+        dual=false, bfs=true, clipping=false, balancing_level=0, hp_tol = 1e-5, fb_tol=1e-5)
     if sol.status != :Solved
         verbose > 0 && @warn "Cannot build binary search tree. Solution status: $(sol.status)"
         return nothing
@@ -206,8 +230,8 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
     CRs = clipping ? get_unsaturated(sol.CRs) : sol.CRs
 
     # Get halfplanes and feedbacks
-    hps,reg2hp = get_halfplanes(CRs;tol=hp_tol,verbose)
-    fbs, fb_ids = get_feedbacks(CRs;verbose)
+    hps,reg2hp = get_halfplanes(CRs;tol=hp_tol)
+    fbs, fb_ids = get_feedbacks(CRs;tol=fb_tol)
 
     nfbs,Nr = length(fbs),length(CRs)
     # Approximate number of real numbers
