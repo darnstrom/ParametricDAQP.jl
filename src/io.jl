@@ -10,6 +10,13 @@ function print_final(ws)
           =======     \n",color=:light_magenta);
 end
 
+function print_tree_build(U,jump_list,depth)
+    print("\r>>\
+          |# nodes: $(length(jump_list))\
+          |depth: $depth\
+          |pending : $(length(U))|         ")
+end
+
 function Base.show(io::IO, sol::Solution)
     println("==== Parametric Solution ========")
     if(length(sol.CRs) == 0)

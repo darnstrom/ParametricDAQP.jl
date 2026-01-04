@@ -107,7 +107,7 @@ function classify_regions(CRs,hps, reg2hp, ws; reg_ids = nothing, hp_ids = nothi
         end
     end
 
-    @showprogress enabled = (verbose > 0) desc="Presplitting" for i in reg_ids
+    @showprogress enabled = (verbose >= 2) desc="Presplitting" for i in reg_ids
         mi = length(CRs[i].bth)
         ws.A[:,1+nbr+1:1+nbr+mi] = CRs[i].Ath
         ws.b[1+nbr+1:1+nbr+mi] = CRs[i].bth .-eps_gap
@@ -242,7 +242,7 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
     ws = setup_daqp_workspace(sol.problem.n_theta)
 
     # Do initial classification
-    nregs,pregs = classify_regions(CRs,hps,reg2hp,ws)
+    nregs,pregs = classify_regions(CRs,hps,reg2hp,ws;verbose)
 
     function get_extream_fbs(splits::Tuple{BitVector,BitVector}, fb_ids, seen_buffer, extreama)
         s_left, s_right = splits
@@ -279,10 +279,7 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
     while !isempty(U)
         reg_ids, branches, self_id = tree_pop!(U)
         depth = max(depth,length(branches))
-        (verbose > 0) && print("\r>>\
-                               |# nodes: $(length(jump_list))\
-                               |depth: $depth\
-                               |pending : $(length(U))|         ")
+        verbose >= 2 && length(U) % 50 == 0 && print_tree_build(U,jump_list,depth)
         # Get halfplane to cut
         hp_id, (new_nregs, new_pregs) = get_split(CRs,hps,reg2hp,reg_ids,pregs,nregs,branches,criterions,ws,
                                                   hp_ids_bit; balancing_level)
@@ -321,7 +318,7 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
         end
     end
 
-    verbose > 0 && println("")
+    verbose >= 2 && println("")
     # Remove superfluous HPs
     hps,hp_list= remove_redundant_hps(jump_list,hp_list,hps)
 
