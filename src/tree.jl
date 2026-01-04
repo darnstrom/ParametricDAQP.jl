@@ -143,7 +143,7 @@ end
 function reduce_candidates(criteria,splits,ids)
     vals = [criteria(s) for s in splits]
     min_val = minimum(vals)
-    min_ids = findall(==(min_val),vals)
+    min_ids = collect(Iterators.take(findall(==(min_val), vals), 20))
     return min_val,splits[min_ids],ids[min_ids]
 end
 
