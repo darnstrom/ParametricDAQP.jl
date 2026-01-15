@@ -3,6 +3,10 @@ function setup_mpp(mpp;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
     # If already setup, just return
     typeof(mpp) <: Union{MPLDP,MPQP,MPVI} && return deepcopy(mpp)
 
+    # Ensure the problem  is convex
+    !isposdef(mpp.H+mpp.H'+1e-12*I) && throw(ArgumentError("Problem is not convex"))
+ 
+
     if hasproperty(mpp,:f_theta)
         f_theta = mpp.f_theta 
     elseif hasproperty(mpp,:F)
@@ -45,7 +49,7 @@ function setup_mpp(mpp;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
         #AHinvA = mpp.A*AHinv'
         HinvF = Matrix(-(mpp.H\F)')
         d = Matrix((B-mpp.A*HinvF')')
-        return MPVI(mpp.H, Matrix(F'),mpp.A, Matrix(B'),HinvAt,AHinvA,HinvF,d,
+        return MPVI(mpp.H, Matrix(F'),mpp.A, Matrix(B'),HinvAt[:,out_inds],AHinvA,HinvF[:,out_inds],d,
                     nth,n,bnd_tbl,ones(m),eq_ids,out_inds,zlims)
     end
 
@@ -364,8 +368,8 @@ function compute_AS0(mpp::Union{MPQP,MPVI},Θ)
         if(mpp isa MPVI)
             bupper,blower = mpp.B[end,:], fill(-1e30,size(mpp.B,2)); 
             blower[mpp.eq_ids] = bupper[mpp.eq_ids];
-            x,λ,info = DAQPBase.solve_avi(mpp.H,mpp.F[end,:],mpp.A,bupper,blower)
-            info.status == :Solved && return info.AS
+            x,λ,exitflag,info = DAQPBase.solve_avi(mpp.H,mpp.F[end,:],mpp.A,bupper,blower)
+            exitflag > 0  && return info.AS
         else # MPLP
             d = DAQPBase.Model();
             DAQPBase.settings(d,Dict(:eps_prox=>1e-6)) # Since the Hessian is singular
