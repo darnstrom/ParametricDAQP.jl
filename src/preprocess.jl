@@ -1,3 +1,38 @@
+function preprocess_eliminate_equalities(mpp)
+    ncstr = length(mpp.bu);
+    n_bounds = ncstr-size(mpp.A,1);
+    # Expand A 
+    A0 = [I(n_bounds) zeros(n_bounds,size(mpp.A,2)-n_bounds);mpp.A]
+
+    # Get mask for equalities
+    mask = mpp.senses .== DAQPBase.EQUALITY
+    eq_ids = findall(mask) 
+    ineq_ids = findall(.~mask)
+
+    # Extract equalities
+    Aeq = A0[eq_ids,:]
+    beq = mpp.bu[eq_ids]
+    Beq = mpp.B[eq_ids,:]
+    senses_eq = mpp.senses[eq_ids]
+
+    # Extract inequalities
+    Aineq = A0[ineq_ids,:]
+    bu,bl = mpp.bu[ineq_ids],mpp.bl[ineq_ids]
+    Bineq = mpp.B[ineq_ids,:]
+    senses_ineq = mpp.senses[ineq_ids]
+
+    # Eliminate equalities 
+    z0,zTH,Z = Aeq\beq, Aeq\Beq, nullspace(Aeq)
+    f,F = Z'*(mpp.f+mpp.H*z0), Z'*(mpp.F+mpp.H*zTH) 
+    H = Z'mpp.H*Z # TODO cholesky -> QR
+    bl, bu =  bl - Aineq*z0, bu - Aineq*z0
+    B, Aineq = Bineq-Aineq*zTH, Aineq*Z
+
+    return (H=H,F=F,f=f,
+            A=Aineq,B=B,bl=bl,bu=bu,senses=senses_ineq, 
+            post_transform = (Z,z0,zTH))
+end
+
 function make_singlesided(mpp;single_soft=false, eliminate_equalities=false,
         explicit_soft= true, soft_weight=1e6)
     ncstr = length(mpp.bu);
@@ -29,26 +64,29 @@ function make_singlesided(mpp;single_soft=false, eliminate_equalities=false,
     mask = senses .== DAQPBase.EQUALITY
     eq_ids = findall(mask) 
     ineq_ids = findall(.~mask)
-    me = sum(mask_eq)
+    me = sum(mask)
     mi = ncstr-me
 
+    # Extract equalities
     Aeq = A0[eq_ids,:]
     beq = mpp.bu[eq_ids]
-    Beq = B[eq_ids,:]
-    senses_eq = senses[eq_ids]
+    Beq = mpp.B[eq_ids,:]
+    senses_eq = mpp.senses[eq_ids]
     prio_eq = prio[eq_ids]
 
-    Aineq = mpp.A[ineq_ids,:]
+    # Extract inequalities
+    Aineq = A0[ineq_ids,:]
     bu,bl = mpp.bu[ineq_ids],mpp.bl[ineq_ids]
-    Bineq = B[ineq_ids,:]
-    senses_ineq = senses[ineq_ids]
+    Bineq = mpp.B[ineq_ids,:]
+    senses_ineq = mpp.senses[ineq_ids]
     prio_ineq = prio[ineq_ids]
+
 
     A = [Aeq;Aineq;-Aineq]
     b = [beq;bu;-bl]
     B = [Beq;Bineq;-Bineq]
-    senses = [senses_eq;senses_ineq;sense_ineq]
-    prio = [prio_eq;prio_eq;prio_eq]
+    senses = [senses_eq;senses_ineq;senses_ineq]
+    prio = [prio_eq;prio_ineq;prio_ineq]
     bounds_table = [1:me; me+mi+1:me+2*mi;me+1:me+mi]
 
     # === Objective ====
@@ -93,11 +131,10 @@ function make_singlesided(mpp;single_soft=false, eliminate_equalities=false,
         bounds_table[bounds_table[rm_ids]] = bounds_table[rm_ids] # Make other bound point to itself
         # Correct bounds table 
         rm_offset, keep_ids = 1, Int[]
-        for i in 1:2*ncstr
-            if(i==rm_ids[rm_offset])
+        for i in 1:(me+2*mi)
+            if(rm_offset <=length(rm_ids) && i==rm_ids[rm_offset])
                 rm_offset+=1
             else
-                bounds_table[i] -= (rm_offset-1)
                 push!(keep_ids,i)
             end
         end
@@ -105,12 +142,7 @@ function make_singlesided(mpp;single_soft=false, eliminate_equalities=false,
         senses,prio,bounds_table = senses[keep_ids],prio[keep_ids],bounds_table[keep_ids]
     end
 
-    # Eliminate equalities
-    if(eliminate_equalities && me > 0)
-        # TODO
-    else
-        out_transform = I
-    end
+    # TODO fix outputs
 
     return (H=H,f=f, H_theta = H_theta, F=F,
             A=Matrix{Float64}(A), b=b, B=B, senses=senses,
