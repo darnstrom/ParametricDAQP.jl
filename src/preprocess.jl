@@ -30,7 +30,7 @@ function preprocess_eliminate_equalities(mpp)
 
     return (H=H,F=F,f=f,
             A=Aineq,B=B,bl=bl,bu=bu,senses=senses_ineq, 
-            post_transform = (Z,z0,zTH))
+            post_transform = (Z,[zTH' z0]))
 end
 
 function make_singlesided(mpp;single_soft=false, eliminate_equalities=false,

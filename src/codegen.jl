@@ -141,3 +141,88 @@ int main(){
           """)
     close(fex)
 end
+
+function codegen(mpp::MPC;fname="daqp_workspace", dir="codegen", opt_settings=nothing, src=true, float_type="double",warm_start=false)
+    length(dir)==0 && (dir="codegen")
+    dir[end] != '/' && (dir*="/") ## Make sure it is a correct directory path
+    # Generate QP workspace
+    d = DAQP.Model() 
+    if(!isnothing(opt_settings))
+        DAQP.settings(d,opt_settings)
+    end
+    DAQP.codegen(d;fname,dir,src)
+
+    if( float_type == "float" || float_type == "single")
+        # Append #define DAQP_SINGLE_PRECISION at the top of types
+        mv(joinpath(dir,"types.h"),joinpath(dir,"types_old.h"))
+        fold = open(joinpath(dir,"types_old.h"),"r")
+        s = read(fold, String)
+        fnew = open(joinpath(dir,"types.h"),"w")
+        write(fnew, "#ifndef DAQP_SINGLE_PRECISION\n # define DAQP_SINGLE_PRECISION\n#endif \n"*s);
+        close(fold)
+        close(fnew)
+        rm(joinpath(dir,"types_old.h"))
+    end
+
+    # Append MPC-specific data/functions
+    render_daqp_workspace(mpp;fname,dir,float_type, fmode="a",warm_start)
+
+    @info "Generated code for MPC controller" dir fname
+end
+
+function render_daqp_workspace(mpp;fname="mpc_workspace",dir="",fmode="w", float_type="double", warm_start=false)
+    mpLDP.Uth_offset[1:mpc.model.nx,:] -= mpc.K' # TODO (Deal with offset?)
+    # Get dimensions
+    nth,m = size(mpLDP.Dth)
+
+    # Setup files
+    fh = open(dir*fname*".h", fmode)
+    fsrc = open(dir*fname*".c", fmode)
+
+    # HEADER 
+    hguard = uppercase(fname)*"_MPC_H"
+    @printf(fh, "#ifndef %s\n",   hguard);
+    @printf(fh, "#define %s\n\n", hguard);
+
+    @printf(fh, "#define N_PARAMETERS %d\n",nth);
+
+    if warm_start
+        @printf(fh, "#define DAQP_WARMSTART %d\n\n")
+    end
+
+    @printf(fh, "extern c_float mpqp_parameter[%d];\n", nth);
+
+    @printf(fh, "extern c_float Dth[%d];\n", nth*m);
+    @printf(fh, "extern c_float du[%d];\n", m);
+    @printf(fh, "extern c_float dl[%d];\n\n", m);
+
+    @printf(fh, "extern c_float Uth_offset[%d];\n\n", mpc.model.nu*nth);
+    @printf(fh, "extern c_float u_offset[%d];\n\n", mpc.model.nu);
+    @printf(fh, "extern c_float uscaling[%d];\n\n", mpc.model.nu);
+
+
+    # SRC 
+    write_float_array(fsrc,zeros(nth),"mpqp_parameter");
+    write_float_array(fsrc,mpLDP.Dth[:],"Dth");
+    write_float_array(fsrc,mpLDP.du[:],"du");
+    write_float_array(fsrc,mpLDP.dl[:],"dl");
+    write_float_array(fsrc,mpLDP.Uth_offset[:],"Z_offset");
+    write_float_array(fsrc,mpLDP.u_offset[:],"Z_post_mult");
+
+    fmpc_h = open(joinpath(dirname(pathof(LinearMPC)),"../codegen/mpc_update_qp.h"), "r");
+    write(fh, read(fmpc_h))
+    close(fmpc_h)
+
+    @printf(fsrc, "#include \"%s.h\"\n",fname);
+    fmpc_para = open(joinpath(dirname(pathof(LinearMPC)),"../codegen/mpc_update_parameter.c"), "r");
+    write(fsrc, read(fmpc_para))
+    close(fmpc_para)
+    fmpc_src = open(joinpath(dirname(pathof(LinearMPC)),"../codegen/mpc_update_qp.c"), "r");
+    write(fsrc, read(fmpc_src))
+    close(fmpc_src)
+
+    @printf(fh, "#endif // ifndef %s\n", hguard);
+
+    close(fh)
+    close(fsrc)
+end
