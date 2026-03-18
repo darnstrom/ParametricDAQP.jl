@@ -1,3 +1,6 @@
+function get_mpp(model::Nothing,vars::Nothing; out_vars=nothing, eliminate_equalities=false)
+    return
+end
 function preprocess_eliminate_equalities(mpp)
     ncstr = length(mpp.bu);
     n_bounds = ncstr-size(mpp.A,1);

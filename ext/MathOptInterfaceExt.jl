@@ -59,4 +59,8 @@ function ParametricDAQP.mpsolve(model::MOI.ModelLike,vars;
     return ParametricDAQP.mpsolve(mpqp,TH;opts)
 end
 
+function ParametricDAQP.get_mpp(moi_model::MOI.ModelLike, vars; out_vars=nothing, eliminate_equalities=false)
+    return moi2mpqp(moi_model,vars;out_vars,eliminate_equalities)
+end
+
 end
