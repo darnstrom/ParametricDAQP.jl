@@ -1,3 +1,5 @@
+using Printf 
+
 function write_array(f,A,name,type)
     N = length(A)
     write(f,"$type $name[$N] = {\n")
@@ -140,4 +142,97 @@ int main(){
 }
           """)
     close(fex)
+end
+
+function codegen_implicit(mpp;fname="pdaqp_workspace", dir="codegen", opt_settings=nothing, src=true, float_type="double",warm_start=false)
+    length(dir)==0 && (dir="codegen")
+    dir[end] != '/' && (dir*="/") ## Make sure it is a correct directory path
+
+    # Generate mpldp
+    mpldp = setup_mpp(mpp)
+    mpldp isa MPLDP || error("codegen_daqp requires a positive definite Hessian H")
+
+    # Generate DAQP workspace
+    d = DAQPBase.Model() 
+    !isnothing(opt_settings) && DAQPBase.settings(d,opt_settings)
+    m = size(mpp.bu, 1)
+    blower  = fill(-1e30, m)
+    senses  = hasproperty(mpp, :senses) ? Vector{Cint}(mpp.senses) : zeros(Cint, m)
+    DAQPBase.setup(d, Matrix{Cdouble}(mpp.H), Vector{Cdouble}(mpp.f),
+                   Matrix{Cdouble}(mpp.A), Vector{Cdouble}(mpp.bu),
+                   Vector{Cdouble}(mpp.bl), senses)
+
+    DAQPBase.codegen(d;fname,dir,src)
+
+    if( float_type == "float" || float_type == "single")
+        # Append #define DAQP_SINGLE_PRECISION at the top of types
+        mv(joinpath(dir,"types.h"),joinpath(dir,"types_old.h"))
+        fold = open(joinpath(dir,"types_old.h"),"r")
+        s = read(fold, String)
+        fnew = open(joinpath(dir,"types.h"),"w")
+        write(fnew, "#ifndef DAQP_SINGLE_PRECISION\n # define DAQP_SINGLE_PRECISION\n#endif \n"*s);
+        close(fold)
+        close(fnew)
+        rm(joinpath(dir,"types_old.h"))
+    end
+
+    # Append MPP-specific data/functions
+    render_pdaqp_workspace(mpldp;fname,dir,float_type, fmode="a",warm_start)
+    @info "Generated code for parameteric program" dir fname
+end
+
+function render_pdaqp_workspace(mpldp;fname="pdaqp_workspace",dir="",fmode="w", float_type="double", warm_start=false)
+    nth,n = mpldp.n_theta, mpldp.n
+    m = length(mpldp.norm_factors)
+
+    # Setup files
+    fh = open(dir*fname*".h", fmode)
+    fsrc = open(dir*fname*".c", fmode)
+
+    # HEADER 
+    hguard = uppercase(fname)*"_PDAQP_H"
+    @printf(fh, "#ifndef %s\n",   hguard);
+    @printf(fh, "#define %s\n\n", hguard);
+
+    @printf(fh, "#define PDAQP_N_PARAMETERS %d\n",nth);
+
+    if warm_start
+        @printf(fh, "#define DAQP_WARMSTART %d\n\n")
+    end
+
+    @printf(fh, "extern c_float mpqp_parameter[%d];\n", nth);
+
+    @printf(fh, "extern c_float Dth[%d];\n", nth*m);
+    @printf(fh, "extern c_float du[%d];\n", m);
+    @printf(fh, "extern c_float dl[%d];\n\n", m);
+
+    @printf(fh, "extern c_float Z_offset[%d];\n\n", n*nth);
+    @printf(fh, "extern c_float z_offset[%d];\n\n", n);
+    #@printf(fh, "extern c_float uscaling[%d];\n\n", n);
+
+
+    # SRC 
+    write_array(fsrc,zeros(nth),"mpqp_parameter","c_float");
+    write_array(fsrc,mpldp.d[1:end-2,:],"Dth", "c_float");
+    write_array(fsrc,mpldp.d[end-1,:],"du", "c_float");
+    write_array(fsrc,mpldp.d[end,:],"dl", "c_float");
+    write_array(fsrc,copy(mpldp.HinvF[1:end-1,:]'),"Z_offset", "c_float");
+    write_array(fsrc,mpldp.HinvF[end,:],"z_offset", "c_float");
+
+    #fmpc_h = open(joinpath(dirname(pathof(ParametricDAQP)),"../codegen/mpc_update_qp.h"), "r");
+    #write(fh, read(fmpc_h))
+    #close(fmpc_h)
+
+    @printf(fsrc, "#include \"%s.h\"\n",fname);
+    #fmpc_para = open(joinpath(dirname(pathof(LinearMPC)),"../codegen/mpc_update_parameter.c"), "r");
+    #write(fsrc, read(fmpc_para))
+    #close(fmpc_para)
+    #fmpc_src = open(joinpath(dirname(pathof(LinearMPC)),"../codegen/mpc_update_qp.c"), "r");
+    #write(fsrc, read(fmpc_src))
+    #close(fmpc_src)
+
+    @printf(fh, "#endif // ifndef %s\n", hguard);
+
+    close(fh)
+    close(fsrc)
 end
