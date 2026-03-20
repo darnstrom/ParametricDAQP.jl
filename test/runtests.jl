@@ -508,12 +508,12 @@ end
     θ = [0.1] # Test θ >= 0 =>  x*=[(1-θ); θ]
     x_sol = evaluate_solution(sol, θ)
     @test norm(x_sol - [1. - θ[1]; θ[1]]) < tol * 10
-    x_ref, _ = DAQPBase.solve_avi(mpVI.H, mpVI.F' * [θ; 1], mpVI.A, mpVI.B' * [θ; 1])
+    x_ref, _ = DAQPBase.avi(mpVI.H, mpVI.F' * [θ; 1], mpVI.A, mpVI.B' * [θ; 1])
     @test norm(x_sol - x_ref) < tol * 10
     θ = [-0.1]# Test  θ < 0 =>  x*=[1; 0]
     x_sol = evaluate_solution(sol, θ)
     @test x_sol[1] == 1. && x_sol[2] == 0.
-    x_ref, _ = DAQPBase.solve_avi(mpVI.H, mpVI.F' * [θ; 1], mpVI.A, mpVI.B' * [θ; 1])
+    x_ref, _ = DAQPBase.avi(mpVI.H, mpVI.F' * [θ; 1], mpVI.A, mpVI.B' * [θ; 1])
     @test norm(x_sol - x_ref) < tol * 10
 end
 
@@ -534,7 +534,7 @@ end
         θ = θs[:, n]
         xsol = evaluate_solution(sol, θ)
         # Compare with standard solution of VI
-        xref, _ = DAQPBase.solve_avi(mpVI.H, mpVI.F' * [θ; 1], mpVI.A, mpVI.B' * [θ; 1])
+        xref, _ = DAQPBase.avi(mpVI.H, mpVI.F' * [θ; 1], mpVI.A, mpVI.B' * [θ; 1])
         errs[n] = norm(xsol - xref) / norm(xsol)
     end
     @test maximum(errs) < tol * 10
@@ -551,7 +551,7 @@ end
     A = zeros(0, 2)
     b = zeros(0)
     tol = 10^(-5)
-    x, r = DAQPBase.solve_avi(H, f, A, b)
+    x, fval, exitflag, info = DAQPBase.avi(H, f, A, b)
     @test(norm(x - [1; 0]) <= tol * 10)
 end
 
@@ -565,6 +565,6 @@ end
     A = Float64[0 -1]
     b = Float64[-1]
     tol = 10^(-5)
-    x, λ = DAQPBase.solve_avi(H, f, A, b)
+    x, fval, exitflag, info = DAQPBase.avi(H, f, A, b)
     @test(norm(x - [0; 1]) <= tol * 10)
 end

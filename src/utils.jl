@@ -281,7 +281,7 @@ function extract_CR(ws,prob)
     end
     if(ws.opts.lowdim_tol > 0)
         rhs_offset = ws.opts.lowdim_tol + 1e-6 # + 1e-6 to account for tolerance in DAQP
-        ccall((:deactivate_constraints,DAQPBase.libdaqp),Cvoid,(Ptr{Cvoid},),ws.DAQP_workspace);
+        ccall((:daqp_deactivate_constraints,DAQPBase.libdaqp),Cvoid,(Ptr{Cvoid},),ws.DAQP_workspace);
         ccall((:reset_daqp_workspace,DAQPBase.libdaqp),Cvoid,(Ptr{Cvoid},),ws.DAQP_workspace);
         ws.bth[1:ws.m].-=rhs_offset; # Shrink region 
         is_feasible = isfeasible(ws.DAQP_workspace, ws.m, 0)
@@ -293,7 +293,7 @@ function extract_CR(ws,prob)
     # Extract regions/solution
     if(ws.opts.store_regions)
         if(ws.opts.remove_redundant)
-            ccall((:deactivate_constraints,DAQPBase.libdaqp),Cvoid,(Ptr{Cvoid},),ws.DAQP_workspace);
+            ccall((:daqp_deactivate_constraints,DAQPBase.libdaqp),Cvoid,(Ptr{Cvoid},),ws.DAQP_workspace);
             Ath,bth = minrep(ws.DAQP_workspace); 
         else
             Ath,bth = ws.Ath[:,1:ws.m],ws.bth[1:ws.m];
@@ -368,15 +368,14 @@ function compute_AS0(mpp::Union{MPQP,MPVI},Θ)
         if(mpp isa MPVI)
             bupper,blower = mpp.B[end,:], fill(-1e30,size(mpp.B,2)); 
             blower[mpp.eq_ids] = bupper[mpp.eq_ids];
-            x,λ,exitflag,info = DAQPBase.solve_avi(mpp.H,mpp.F[end,:],mpp.A,bupper,blower)
-            exitflag > 0  && return info.AS
+            x,λ,exitflag,info = DAQPBase.avi(mpp.H,mpp.F[end,:],mpp.A,bupper,blower)
         else # MPLP
             d = DAQPBase.Model();
             DAQPBase.settings(d,Dict(:eps_prox=>1e-6)) # Since the Hessian is singular
             DAQPBase.setup(d,mpp.H,mpp.F[end,:],mpp.A,mpp.B[end,:],Float64[], senses);
             x,fval,exitflag,info = DAQPBase.solve(d);
-            exitflag == 1 && return findall(abs.(info.λ).> 0)
         end
+        exitflag == 1 && return findall(abs.(info.λ).> 0)
     end
 
     Alift = [-mpp.B[1:end-1,:]' mpp.A; Θ.A' zeros(length(Θ.b),mpp.n)]
@@ -391,15 +390,14 @@ function compute_AS0(mpp::Union{MPQP,MPVI},Θ)
     if(mpp isa MPVI)
         bupper,blower = mpp.A,mpp.B'*[θ;1],fill(-1e30,size(mpp.B,2)); 
         blower[mpp.eq_ids] = bupper[mpp.eq_ids];
-        x,λ,info = DAQPBase.solve_avi(mpp.H,mpp.F'*[θ;1],bupper,blower)
-        return info.AS;
+        x,fval,exitflag,info.λ = DAQPBase.avi(mpp.H,mpp.F'*[θ;1],bupper,blower)
     else # MPQP
         d = DAQPBase.Model();
         DAQPBase.settings(d,Dict(:eps_prox=>1e-6)) # Since the Hessian is singular
         DAQPBase.setup(d,mpp.H,mpp.F'*[θ;1],mpp.A,mpp.B'*[θ;1],Float64[],senses);
         x,fval,exitflag,info = DAQPBase.solve(d);
-        return findall(abs.(info.λ).> 0)
     end
+    return findall(abs.(info.λ).> 0)
 end
 ## Get CRs 
 function get_critical_regions(sol::Solution)
