@@ -182,57 +182,98 @@ function codegen_implicit(mpp;fname="pdaqp_workspace", dir="codegen", opt_settin
 end
 
 function render_pdaqp_workspace(mpldp;fname="pdaqp_workspace",dir="",fmode="w", float_type="double", warm_start=false)
-    nth,n = mpldp.n_theta, mpldp.n
+    nth = mpldp.n_theta
+    n_out = size(mpldp.HinvF, 2)  # number of output (decision) variables
     m = length(mpldp.norm_factors)
 
     # Setup files
     fh = open(dir*fname*".h", fmode)
     fsrc = open(dir*fname*".c", fmode)
 
-    # HEADER 
+    # HEADER
     hguard = uppercase(fname)*"_PDAQP_H"
     @printf(fh, "#ifndef %s\n",   hguard);
     @printf(fh, "#define %s\n\n", hguard);
 
-    @printf(fh, "#define PDAQP_N_PARAMETERS %d\n",nth);
+    @printf(fh, "#define PDAQP_N_PARAMETERS %d\n",  nth);
+    @printf(fh, "#define PDAQP_N_CONSTRAINTS %d\n", m);
+    @printf(fh, "#define PDAQP_N_DECISION %d\n\n",  n_out);
 
     if warm_start
-        @printf(fh, "#define DAQP_WARMSTART %d\n\n")
+        @printf(fh, "#define DAQP_WARMSTART\n\n");
     end
 
     @printf(fh, "extern c_float mpqp_parameter[%d];\n", nth);
-
     @printf(fh, "extern c_float Dth[%d];\n", nth*m);
     @printf(fh, "extern c_float du[%d];\n", m);
     @printf(fh, "extern c_float dl[%d];\n\n", m);
+    @printf(fh, "extern c_float Z_offset[%d];\n", n_out*nth);
+    @printf(fh, "extern c_float z_offset[%d];\n\n", n_out);
 
-    @printf(fh, "extern c_float Z_offset[%d];\n\n", n*nth);
-    @printf(fh, "extern c_float z_offset[%d];\n\n", n);
-    #@printf(fh, "extern c_float uscaling[%d];\n\n", n);
-
-
-    # SRC 
-    write_array(fsrc,zeros(nth),"mpqp_parameter","c_float");
-    write_array(fsrc,mpldp.d[1:end-2,:],"Dth", "c_float");
-    write_array(fsrc,mpldp.d[end-1,:],"du", "c_float");
-    write_array(fsrc,mpldp.d[end,:],"dl", "c_float");
-    write_array(fsrc,copy(mpldp.HinvF[1:end-1,:]'),"Z_offset", "c_float");
-    write_array(fsrc,mpldp.HinvF[end,:],"z_offset", "c_float");
-
-    #fmpc_h = open(joinpath(dirname(pathof(ParametricDAQP)),"../codegen/mpc_update_qp.h"), "r");
-    #write(fh, read(fmpc_h))
-    #close(fmpc_h)
-
-    @printf(fsrc, "#include \"%s.h\"\n",fname);
-    #fmpc_para = open(joinpath(dirname(pathof(LinearMPC)),"../codegen/mpc_update_parameter.c"), "r");
-    #write(fsrc, read(fmpc_para))
-    #close(fmpc_para)
-    #fmpc_src = open(joinpath(dirname(pathof(LinearMPC)),"../codegen/mpc_update_qp.c"), "r");
-    #write(fsrc, read(fmpc_src))
-    #close(fmpc_src)
+    # Function declarations
+    @printf(fh, "void pdaqp_update_qp(c_float* th, c_float* dupper, c_float* dlower);\n");
+    @printf(fh, "void pdaqp_get_solution(c_float* th, c_float* solution, c_float* xstar);\n");
+    @printf(fh, "int  pdaqp_compute_solution(c_float* th, c_float* solution);\n\n");
 
     @printf(fh, "#endif // ifndef %s\n", hguard);
 
     close(fh)
+
+    # SRC: global parametric data arrays
+    write_array(fsrc, zeros(nth),                       "mpqp_parameter", "c_float");
+    write_array(fsrc, mpldp.d[1:end-2,:],               "Dth",            "c_float");
+    write_array(fsrc, mpldp.d[end-1,:],                 "du",             "c_float");
+    write_array(fsrc, mpldp.d[end,:],                   "dl",             "c_float");
+    write_array(fsrc, copy(mpldp.HinvF[1:end-1,:]'),    "Z_offset",       "c_float");
+    write_array(fsrc, mpldp.HinvF[end,:],               "z_offset",       "c_float");
+
+    # Include headers (after the data definitions so that include guards prevent
+    # double-inclusion of any type definitions already present in the file)
+    @printf(fsrc, "#include \"%s.h\"\n", fname);
+    @printf(fsrc, "#include \"daqp.h\"\n\n");
+
+    # C function: update DAQP upper/lower bounds given parameter th
+    src_code = """void pdaqp_update_qp(c_float* th, c_float* dupper, c_float* dlower){
+    int i, j, disp;
+    c_float b_shift_th;
+    for(i = 0, disp = 0; i < PDAQP_N_CONSTRAINTS; i++){
+        b_shift_th = 0;
+        for(j = 0; j < PDAQP_N_PARAMETERS; j++) b_shift_th += Dth[disp++]*th[j];
+        dupper[i] = du[i] + b_shift_th;
+        dlower[i] = dl[i] + b_shift_th;
+    }
+}
+
+"""
+    # C function: transform DAQP QP solution xstar back to the nominal variable
+    src_code *= """void pdaqp_get_solution(c_float* th, c_float* solution, c_float* xstar){
+    int i, j;
+    c_float sol_shift;
+    for(i = 0; i < PDAQP_N_DECISION; i++){
+        sol_shift = z_offset[i];
+        for(j = 0; j < PDAQP_N_PARAMETERS; j++)
+            sol_shift += Z_offset[i + j*PDAQP_N_DECISION]*th[j];
+        solution[i] = xstar[i] + sol_shift;
+    }
+}
+
+"""
+    # C function: update constraints, solve the LDP, and recover the nominal solution
+    src_code *= """int pdaqp_compute_solution(c_float* th, c_float* solution){
+    pdaqp_update_qp(th, daqp_work.dupper, daqp_work.dlower);
+    daqp_work.reuse_ind = 0;
+"""
+    if !warm_start
+        src_code *= """    daqp_deactivate_constraints(&daqp_work);
+    reset_daqp_workspace(&daqp_work);
+"""
+    end
+    src_code *= """    int exitflag = daqp_ldp(&daqp_work);
+    ldp2qp_solution(&daqp_work);
+    pdaqp_get_solution(th, solution, daqp_work.x);
+    return exitflag;
+}
+"""
+    write(fsrc, src_code)
     close(fsrc)
 end

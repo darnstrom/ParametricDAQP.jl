@@ -1,43 +1,46 @@
 ## Plots.jl
 using RecipesBase
-@recipe function f(r::CriticalRegion)
-    st --> :mesh3d 
-    nth = size(r.Ath,1)
-    legend --> false
-    vs=PolyDAQP.vrep_2d(minrep(slice(r.Ath,r.bth,collect(3:nth))...)...)
-    nv = length(vs)
-    x,y = first.(vs),last.(vs)
-    z = [r.z[:,1]'*[v;zeros(nth-2);1] for v in vs]
-    connections--> (zeros(Int, nv-2),collect(1:nv-2),collect(2:nv-1))
-    return x,y,z 
+@recipe function f(r::CriticalRegion; z_id =0, free_ids = zeros(0), fix_ids = zeros(0), fix_vals=zeros(0))
+    plotattributes[:CR_attr] = (z_id ,free_ids,fix_ids,fix_vals)
+    return [r]
 end
 
-@recipe function f(rs::Vector{CriticalRegion};uid=0, 
-        fix_ids = nothing, fix_vals=nothing)
+@recipe function f(rs::Vector{CriticalRegion};z_id =0, free_ids=zeros(0), fix_ids = zeros(0), fix_vals=zeros(0))
     isempty(rs) && error("Cannot plot empty collection")
     nth = size(rs[1].Ath,1)
-    ids = isnothing(fix_ids) ? collect(3:nth) : fix_ids
-    values = isnothing(fix_vals) ? zeros(nth-2) : fix_vals 
-    free_ids = setdiff(1:nth,ids) 
-    if(uid ==0) # Don't plot feedback law, just the poly collection
-        @series [Polyhedron(slice(r.Ath,r.bth,ids;values)...) for r in rs]
-    else
-        for r in rs
-            vs=PolyDAQP.vrep_2d(minrep(slice(r.Ath,r.bth,ids;values)...)...)
-            nv = length(vs)
-            nv < 2 && continue
-            x,y = first.(vs), last.(vs)
-            c = r.z[ids,uid]'*values + r.z[end,uid]
-            z = [r.z[free_ids,uid]'*v + c for v in vs]
-            @series begin
-                st --> :mesh3d 
-                legend --> false
-                connections--> (zeros(Int, nv-2),collect(1:nv-2),collect(2:nv-1))
-                extra_kwargs --> Dict(:subplot=>Dict("faceted color" => "none"))
-                (x,y,z)
-            end
-        end
+
+    if haskey(plotattributes, :CR_attr)
+        z_id ,free_ids,fix_ids,fix_vals = pop!(plotattributes,:CR_attr)
     end
+
+    if isempty(free_ids)
+        ids = isempty(fix_ids) ? collect(3:nth) : fix_ids
+        values = isempty(fix_vals) ? zeros(nth-2) : fix_vals
+        free_ids = setdiff(1:nth,ids)
+    elseif length(free_ids) != 2
+        error("The number of parameters to plot needs to be 2, not $(length(free_ids))")
+    else
+        ids = setdiff(1:nth,free_ids)
+        values = isempty(fix_vals) ? zeros(nth-2) : fix_vals
+    end
+    free_ids = sort(free_ids)
+    xlabel --> "\\theta [$(free_ids[1])]"
+    ylabel --> "\\theta [$(free_ids[2])]"
+    ps = [Polyhedron(slice(r.Ath,r.bth,ids;values)...) for r in rs]
+    if(z_id  ==0) # Don't plot feedback law, just the poly collection
+        title --> "Critical regions"
+        return ps
+    else
+        title --> "Explicit solution"
+        zlabel --> "z [$z_id]"
+        fs = [(v->r.z[free_ids,z_id ]'*v+r.z[ids,z_id ]'*values + r.z[end,z_id ]) for r in rs]
+        return collect(zip(ps,fs))
+    end
+end
+
+@recipe function f(sol::Solution; z_id  = 0, free_ids=zeros(0), fix_ids = zeros(0), fix_vals=zeros(0))
+    plotattributes[:CR_attr] = (z_id ,free_ids,fix_ids,fix_vals)
+    return get_critical_regions(sol)
 end
 
 ## PGFPlotsX
