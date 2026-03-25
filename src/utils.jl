@@ -339,25 +339,36 @@ function extract_solution(AS,prob::MPQP,ws)
     return x,λ
 end
 ## Compute AS0 
+# Solve an LDP min ||x||²/2 s.t. A*x ≤ b as a QP with explicit identity Hessian.
+# This avoids a bug introduced in DAQPBase ≥ 0.4.1 (daqp commit 49bc1408) where
+# uninitialized memory (xold) is incorrectly used as x_unc when H and f are empty,
+# causing wrong feasibility results and therefore missing critical regions.
+function ldp_quadprog(A::AbstractMatrix, b::AbstractVector,
+                      blower::AbstractVector=Float64[],
+                      senses::AbstractVector{Cint}=Cint[])
+    n = size(A, 2)
+    return DAQPBase.quadprog(Matrix{Float64}(I, n, n), zeros(n), A, b, blower, senses)
+end
+
 function compute_AS0(mpLDP::MPLDP,Θ)
     # Center in box is zero -> dtot = d[end,:]
     senses = zeros(Cint,size(mpLDP.d,2)+length(Θ.b));
     senses[mpLDP.eq_ids] .= DAQPBase.EQUALITY
 
     if(isempty(Θ.A) || all(Θ.b .>= 0)) # Check if origin is feasible
-        _,_,exitflag,info= DAQPBase.quadprog(zeros(0,0),zeros(0),mpLDP.M,mpLDP.d[end,:],Float64[], senses);
+        _,_,exitflag,info= ldp_quadprog(mpLDP.M,mpLDP.d[end,:],Float64[], senses);
         exitflag == 1 && return mpLDP.eq_ids ∪ findall(abs.(info.λ).> 0)
     end
 
     # Solve lifted feasibility problem in (x,θ)-space to find initial point 
     Alift = [-mpLDP.d[1:end-1,:]' mpLDP.M; Θ.A' zeros(length(Θ.b),mpLDP.n)]
-    x,_,exitflag,info= DAQPBase.quadprog(zeros(0,0),zeros(0),Alift,[mpLDP.d[end,:];Θ.b],Float64[],senses);
+    x,_,exitflag,info= ldp_quadprog(Alift,[mpLDP.d[end,:];Θ.b],Float64[],senses);
     if exitflag != 1
         @warn "There is no parameter that makes the problem feasible"
         return nothing
     end
     θ = x[1:mpLDP.n_theta]
-    _,_,exitflag,info= DAQPBase.quadprog(zeros(0,0),zeros(0),mpLDP.M,mpLDP.d'*[θ;1],Float64[],senses);
+    _,_,exitflag,info= ldp_quadprog(mpLDP.M,mpLDP.d'*[θ;1],Float64[],senses);
     return mpLDP.eq_ids ∪ findall(abs.(info.λ).> 0)
 end
 function compute_AS0(mpp::Union{MPQP,MPVI},Θ)
@@ -380,7 +391,7 @@ function compute_AS0(mpp::Union{MPQP,MPVI},Θ)
 
     Alift = [-mpp.B[1:end-1,:]' mpp.A; Θ.A' zeros(length(Θ.b),mpp.n)]
     # Solve lifted feasibility problem in (x,θ)-space to find initial point 
-    x,_,exitflag,info= DAQPBase.quadprog(zeros(0,0),zeros(0),Alift,[mpp.B[end,:];Θ.b],Float64[],senses);
+    x,_,exitflag,info= ldp_quadprog(Alift,[mpp.B[end,:];Θ.b],Float64[],senses);
     if exitflag != 1
         @warn "There is no parameter that makes the problem feasible"
         return nothing
@@ -452,7 +463,7 @@ function get_ignore_masks(mpp,Θ,UIntX,id_cands,ws)
         senses[j] = senses[i] =  DAQPBase.EQUALITY
         DAQPBase.update(feas_ws,nothing,nothing,nothing,nothing,nothing,senses)
         # Solve lifted feasibility problem in (x,θ)-space to find initial point 
-        x,_,exitflag,info= DAQPBase.quadprog(zeros(0,0),zeros(0),Alift,blift,Float64[],senses);
+        x,_,exitflag,info= ldp_quadprog(Alift,blift,Float64[],senses);
         ws.nLPs+=1
         if exitflag < 0  
             ignore_masks[i] |= (UIntX(1) << (j-1))
