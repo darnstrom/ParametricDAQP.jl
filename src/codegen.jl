@@ -8,19 +8,20 @@ function write_array(f,A,name,type)
 end
 
 function codegen(sol::Solution;dir="codegen",fname="pdaqp", float_type="float", c_float_store=float_type, int_type="unsigned short",
-        max_reals=1e12, dual = false, bfs=true, clipping=false)
+        max_reals=1e12, dual = false, bfs=true, clipping=false, store_transpose=false)
     bst = build_tree(sol;max_reals,dual,bfs,clipping);
     isnothing(bst) && return -1
-    codegen(bst;dir,fname,float_type,int_type,c_float_store)
+    codegen(bst;dir,fname,float_type,int_type,c_float_store,store_transpose)
     return 1
 end
 
-function codegen(bst::BinarySearchTree; dir="codegen",fname="pdaqp", float_type="float", c_float_store=float_type, int_type="unsigned short")
+function codegen(bst::BinarySearchTree; dir="codegen",fname="pdaqp", float_type="float", c_float_store=float_type, int_type="unsigned short", store_transpose=false)
     isdir(dir) || mkdir(dir)
     # Get number of outputs 
     nth,nz = size(bst.feedbacks[1]).-(1,0)
-    # Concatenate feedbacks into one array
-    feedbacks = reduce(hcat,bst.feedbacks)
+    # Concatenate feedbacks into one array (optionally transposed)
+    feedbacks = store_transpose ? reduce(hcat,[collect(f') for f in bst.feedbacks]) :
+                                  reduce(hcat,bst.feedbacks)
 
     if(!isempty(bst.duals))
         duals = reduce(hcat,bst.duals)
@@ -59,7 +60,36 @@ function codegen(bst::BinarySearchTree; dir="codegen",fname="pdaqp", float_type=
     write_array(fsrc,bst.jump_list,fname*"_jump_list","c_int") 
 
     clip_call = isempty(bst.clipping) ? "val" : "$(fname)_clip(val,$(fname)_out_min[i],$(fname)_out_max[i])"
-    src_code = """void $(fname)_evaluate(c_float* parameter, $eval_sol_args){
+    clip_call_t = isempty(bst.clipping) ? "solution[i]" : "$(fname)_clip(solution[i],$(fname)_out_min[i],$(fname)_out_max[i])"
+    if store_transpose
+        src_code = """void $(fname)_evaluate(c_float* parameter, $eval_sol_args){
+        int i,j,disp;
+        int id,next_id;
+        c_float val;
+        id = 0;
+        next_id = id+$(fname)_jump_list[id];
+        while(next_id != id){
+            // Compute halfplane value
+            disp = $(fname)_hp_list[id]*($(uppercase(fname))_N_PARAMETER+1);
+            for(i=0, val=0; i<$(uppercase(fname))_N_PARAMETER; i++)
+                val += parameter[i] * $(fname)_halfplanes[disp++];
+            id = next_id + (val <= $(fname)_halfplanes[disp]);
+            next_id = id+$(fname)_jump_list[id];
+        }
+        // Leaf node reached -> evaluate affine function (transposed feedbacks)
+        disp = $(fname)_hp_list[id]*($(uppercase(fname))_N_PARAMETER+1)*$(uppercase(fname))_N_SOLUTION;
+        for(i=0; i < $(uppercase(fname))_N_SOLUTION; i++) solution[i] = 0;
+        for(j=0; j < $(uppercase(fname))_N_PARAMETER; j++){
+            for(i=0; i < $(uppercase(fname))_N_SOLUTION; i++)
+                solution[i] += parameter[j] * $(fname)_feedbacks[disp++];
+        }
+        for(i=0; i < $(uppercase(fname))_N_SOLUTION; i++){
+            solution[i] += $(fname)_feedbacks[disp++];
+            solution[i] = $clip_call_t;
+        }
+    """
+    else
+        src_code = """void $(fname)_evaluate(c_float* parameter, $eval_sol_args){
         int i,j,disp;
         int id,next_id;
         c_float val;
@@ -82,6 +112,7 @@ function codegen(bst::BinarySearchTree; dir="codegen",fname="pdaqp", float_type=
             solution[i] = $clip_call;
         }
     """
+    end
     if(isempty(duals))
         src_code *= """
         }

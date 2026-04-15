@@ -435,6 +435,42 @@ end
     end
 end
 
+@testset "C-generated BST with store_transpose" begin
+    # Setup mpQP
+    H =  [1.5064 0.4838; 0.4838 1.5258];
+    f = zeros(2,1)
+    F = [9.6652 5.2115; 7.0732 -7.0879];
+    A = [1.0 0; -1 0; 0 1; 0 -1];
+    B = zeros(4,2);
+    b = 2*ones(4);
+    mpQP = (H=H,f=f,F=F,A=A,b=b,B=B)
+
+    # Get a reference point
+    θ = [-0.75;0.5]
+    f = mpQP.f[:,1]+mpQP.F*θ
+    b = mpQP.b[:,1]+mpQP.B*θ
+    zref,~,~,info= DAQP.quadprog(mpQP.H,f,mpQP.A,b,-1e30*ones(4),zeros(Cint,4));
+
+    # Setup parameter region of interest
+    ub,lb  = 1.5*ones(2), -1.5*ones(2)
+    Θ = (ub=ub,lb=lb)
+
+    opts = ParametricDAQP.Settings()
+    sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
+
+    srcdir = tempname()
+    status = ParametricDAQP.codegen(sol; dir=srcdir, store_transpose=true)
+    @test status > 0
+    if(!isnothing(Sys.which("gcc")))
+        testlib = "tree_test."* Base.Libc.Libdl.dlext
+        run(Cmd(`gcc -lm -fPIC -O3 -msse3 -xc -shared -o $testlib pdaqp.c`; dir=srcdir))
+        z = zeros(Cfloat, 2)
+        global templib = joinpath(srcdir,testlib)
+        ccall(("pdaqp_evaluate", templib), Cvoid, (Ptr{Cfloat}, Ptr{Cfloat}), Cfloat.(θ),z)
+        @test norm(z - zref)/norm(z) < 1e-6
+    end
+end
+
 @testset "Unconstrained" begin
     n,nth = 10,5
     mpQP,Θ = generate_mpQP(n,0,nth)
