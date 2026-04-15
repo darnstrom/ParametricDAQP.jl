@@ -464,10 +464,15 @@ end
     if(!isnothing(Sys.which("gcc")))
         testlib = "tree_test."* Base.Libc.Libdl.dlext
         run(Cmd(`gcc -lm -fPIC -O3 -msse3 -xc -shared -o $testlib pdaqp.c`; dir=srcdir))
-        z = zeros(Cfloat, 2)
         global templib = joinpath(srcdir,testlib)
+        # evaluate uses normal feedbacks
+        z = zeros(Cfloat, 2)
         ccall(("pdaqp_evaluate", templib), Cvoid, (Ptr{Cfloat}, Ptr{Cfloat}), Cfloat.(θ),z)
         @test norm(z - zref)/norm(z) < 1e-6
+        # evaluate_transpose uses transposed feedbacks and should give the same result
+        z_t = zeros(Cfloat, 2)
+        ccall(("pdaqp_evaluate_transpose", templib), Cvoid, (Ptr{Cfloat}, Ptr{Cfloat}), Cfloat.(θ),z_t)
+        @test norm(z_t - zref)/norm(z_t) < 1e-6
     end
 end
 

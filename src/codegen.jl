@@ -19,9 +19,10 @@ function codegen(bst::BinarySearchTree; dir="codegen",fname="pdaqp", float_type=
     isdir(dir) || mkdir(dir)
     # Get number of outputs 
     nth,nz = size(bst.feedbacks[1]).-(1,0)
-    # Concatenate feedbacks into one array (optionally transposed)
-    feedbacks = store_transpose ? reduce(hcat,[collect(f') for f in bst.feedbacks]) :
-                                  reduce(hcat,bst.feedbacks)
+    # Concatenate feedbacks into one array (normal layout)
+    feedbacks = reduce(hcat,bst.feedbacks)
+    # Optionally also build transposed layout
+    feedbacks_T = store_transpose ? reduce(hcat,[collect(f') for f in bst.feedbacks]) : nothing
 
     if(!isempty(bst.duals))
         duals = reduce(hcat,bst.duals)
@@ -43,6 +44,7 @@ function codegen(bst::BinarySearchTree; dir="codegen",fname="pdaqp", float_type=
     !isempty(duals) && write(fh, "#define $(uppercase(fname))_N_CONSTRAINTS $(size(bst.duals[1],2))\n\n")
     eval_sol_args = isempty(duals) ? "c_float* solution" : "c_float* solution, c_float* dual"
     write(fh, "void $(fname)_evaluate(c_float* parameter, $eval_sol_args);\n")
+    store_transpose && write(fh, "void $(fname)_evaluate_transpose(c_float* parameter, c_float* solution);\n")
     !isempty(bst.clipping) && write(fh, "c_float $(fname)_clip(c_float v, c_float min, c_float max);\n")
     write(fh, "#endif // ifndef $hguard\n");
     close(fh)
@@ -52,6 +54,7 @@ function codegen(bst::BinarySearchTree; dir="codegen",fname="pdaqp", float_type=
     write(fsrc, "#include \"$fname.h\"\n")
     write_array(fsrc,bst.halfplanes,fname*"_halfplanes","c_float_store")
     write_array(fsrc,feedbacks,fname*"_feedbacks","c_float_store")
+    !isnothing(feedbacks_T) && write_array(fsrc,feedbacks_T,fname*"_feedbacks_T","c_float_store")
     !isempty(duals) && write_array(fsrc,duals,fname*"_duals","c_float")
     !isempty(bst.clipping) && write_array(fsrc,bst.clipping[:,1],fname*"_out_min","c_float")
     !isempty(bst.clipping) && write_array(fsrc,bst.clipping[:,2],fname*"_out_max","c_float")
@@ -61,35 +64,7 @@ function codegen(bst::BinarySearchTree; dir="codegen",fname="pdaqp", float_type=
 
     clip_call = isempty(bst.clipping) ? "val" : "$(fname)_clip(val,$(fname)_out_min[i],$(fname)_out_max[i])"
     clip_call_t = isempty(bst.clipping) ? "solution[i]" : "$(fname)_clip(solution[i],$(fname)_out_min[i],$(fname)_out_max[i])"
-    if store_transpose
-        src_code = """void $(fname)_evaluate(c_float* parameter, $eval_sol_args){
-        int i,j,disp;
-        int id,next_id;
-        c_float val;
-        id = 0;
-        next_id = id+$(fname)_jump_list[id];
-        while(next_id != id){
-            // Compute halfplane value
-            disp = $(fname)_hp_list[id]*($(uppercase(fname))_N_PARAMETER+1);
-            for(i=0, val=0; i<$(uppercase(fname))_N_PARAMETER; i++)
-                val += parameter[i] * $(fname)_halfplanes[disp++];
-            id = next_id + (val <= $(fname)_halfplanes[disp]);
-            next_id = id+$(fname)_jump_list[id];
-        }
-        // Leaf node reached -> evaluate affine function (transposed feedbacks)
-        disp = $(fname)_hp_list[id]*($(uppercase(fname))_N_PARAMETER+1)*$(uppercase(fname))_N_SOLUTION;
-        for(i=0; i < $(uppercase(fname))_N_SOLUTION; i++) solution[i] = 0;
-        for(j=0; j < $(uppercase(fname))_N_PARAMETER; j++){
-            for(i=0; i < $(uppercase(fname))_N_SOLUTION; i++)
-                solution[i] += parameter[j] * $(fname)_feedbacks[disp++];
-        }
-        for(i=0; i < $(uppercase(fname))_N_SOLUTION; i++){
-            solution[i] += $(fname)_feedbacks[disp++];
-            solution[i] = $clip_call_t;
-        }
-    """
-    else
-        src_code = """void $(fname)_evaluate(c_float* parameter, $eval_sol_args){
+    src_code = """void $(fname)_evaluate(c_float* parameter, $eval_sol_args){
         int i,j,disp;
         int id,next_id;
         c_float val;
@@ -112,7 +87,6 @@ function codegen(bst::BinarySearchTree; dir="codegen",fname="pdaqp", float_type=
             solution[i] = $clip_call;
         }
     """
-    end
     if(isempty(duals))
         src_code *= """
         }
@@ -125,6 +99,35 @@ function codegen(bst::BinarySearchTree; dir="codegen",fname="pdaqp", float_type=
                 val += $(fname)_duals[disp++];
                 dual[i] = val;
             }
+        }
+        """
+    end
+
+    if store_transpose
+        src_code *= """
+        void $(fname)_evaluate_transpose(c_float* parameter, c_float* solution){
+            int i,j,disp;
+            int id,next_id;
+            c_float val;
+            id = 0;
+            next_id = id+$(fname)_jump_list[id];
+            while(next_id != id){
+                // Compute halfplane value
+                disp = $(fname)_hp_list[id]*($(uppercase(fname))_N_PARAMETER+1);
+                for(i=0, val=0; i<$(uppercase(fname))_N_PARAMETER; i++)
+                    val += parameter[i] * $(fname)_halfplanes[disp++];
+                id = next_id + (val <= $(fname)_halfplanes[disp]);
+                next_id = id+$(fname)_jump_list[id];
+            }
+            // Leaf node reached -> evaluate affine function using transposed feedbacks
+            disp = $(fname)_hp_list[id]*($(uppercase(fname))_N_PARAMETER+1)*$(uppercase(fname))_N_SOLUTION;
+            for(i=0; i < $(uppercase(fname))_N_SOLUTION; i++) solution[i] = 0;
+            for(j=0; j < $(uppercase(fname))_N_PARAMETER; j++){
+                for(i=0; i < $(uppercase(fname))_N_SOLUTION; i++)
+                    solution[i] += parameter[j] * $(fname)_feedbacks_T[disp++];
+            }
+            for(i=0; i < $(uppercase(fname))_N_SOLUTION; i++)
+                solution[i] += $(fname)_feedbacks_T[disp++];
         }
         """
     end
