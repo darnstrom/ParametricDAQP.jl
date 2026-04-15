@@ -120,14 +120,17 @@ function codegen(bst::BinarySearchTree; dir="codegen",fname="pdaqp", float_type=
                 next_id = id+$(fname)_jump_list[id];
             }
             // Leaf node reached -> evaluate affine function using transposed feedbacks
+            // solution[i] is first accumulated from parameter contributions, then the bias is added
             disp = $(fname)_hp_list[id]*($(uppercase(fname))_N_PARAMETER+1)*$(uppercase(fname))_N_SOLUTION;
             for(i=0; i < $(uppercase(fname))_N_SOLUTION; i++) solution[i] = 0;
             for(j=0; j < $(uppercase(fname))_N_PARAMETER; j++){
                 for(i=0; i < $(uppercase(fname))_N_SOLUTION; i++)
                     solution[i] += parameter[j] * $(fname)_feedbacks_T[disp++];
             }
-            for(i=0; i < $(uppercase(fname))_N_SOLUTION; i++)
+            for(i=0; i < $(uppercase(fname))_N_SOLUTION; i++){
                 solution[i] += $(fname)_feedbacks_T[disp++];
+                solution[i] = $clip_call_t;
+            }
         }
         """
     end
