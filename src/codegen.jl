@@ -103,38 +103,6 @@ function codegen(bst::BinarySearchTree; dir="codegen",fname="pdaqp", float_type=
         """
     end
 
-    if store_transpose
-        src_code *= """
-        void $(fname)_evaluate_transpose(c_float* parameter, c_float* solution){
-            int i,j,disp;
-            int id,next_id;
-            c_float val;
-            id = 0;
-            next_id = id+$(fname)_jump_list[id];
-            while(next_id != id){
-                // Compute halfplane value
-                disp = $(fname)_hp_list[id]*($(uppercase(fname))_N_PARAMETER+1);
-                for(i=0, val=0; i<$(uppercase(fname))_N_PARAMETER; i++)
-                    val += parameter[i] * $(fname)_halfplanes[disp++];
-                id = next_id + (val <= $(fname)_halfplanes[disp]);
-                next_id = id+$(fname)_jump_list[id];
-            }
-            // Leaf node reached -> evaluate affine function using transposed feedbacks
-            // solution[i] is first accumulated from parameter contributions, then the bias is added
-            disp = $(fname)_hp_list[id]*($(uppercase(fname))_N_PARAMETER+1)*$(uppercase(fname))_N_SOLUTION;
-            for(i=0; i < $(uppercase(fname))_N_SOLUTION; i++) solution[i] = 0;
-            for(j=0; j < $(uppercase(fname))_N_PARAMETER; j++){
-                for(i=0; i < $(uppercase(fname))_N_SOLUTION; i++)
-                    solution[i] += parameter[j] * $(fname)_feedbacks_T[disp++];
-            }
-            for(i=0; i < $(uppercase(fname))_N_SOLUTION; i++){
-                solution[i] += $(fname)_feedbacks_T[disp++];
-                solution[i] = $clip_call_t;
-            }
-        }
-        """
-    end
-
     if(!isempty(bst.clipping))
         src_code *= """
         c_float $(fname)_clip(c_float v, c_float min, c_float max) {
