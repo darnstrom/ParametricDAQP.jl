@@ -31,9 +31,10 @@ function preprocess_eliminate_equalities(mpp)
     bl, bu =  bl - Aineq*z0, bu - Aineq*z0
     B, Aineq = Bineq-Aineq*zTH, Aineq*Z
 
+    out_inds = hasproperty(mpp, :out_inds) ? collect(mpp.out_inds) : collect(1:size(mpp.H, 1))
     return (H=H,F=F,f=f,
-            A=Aineq,B=B,bl=bl,bu=bu,senses=senses_ineq, 
-            post_transform = (Z,[zTH' z0]))
+            A=Aineq,B=B,bl=bl,bu=bu,senses=senses_ineq,
+            post_transform = (Z[out_inds, :], [zTH[out_inds, :] z0[out_inds]]))
 end
 
 function make_singlesided(mpp;single_soft=false, eliminate_equalities=false,
