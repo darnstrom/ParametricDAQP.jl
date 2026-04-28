@@ -3,9 +3,6 @@ function setup_mpp(mpp;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
     # If already setup, just return
     typeof(mpp) <: Union{MPLDP,MPQP,MPVI} && return deepcopy(mpp)
 
-    # Ensure the problem  is convex
-    !isposdef(mpp.H+mpp.H'+1e-12*I) && throw(ArgumentError("Problem is not convex"))
- 
 
     if hasproperty(mpp,:f_theta)
         f_theta = mpp.f_theta 
@@ -18,6 +15,18 @@ function setup_mpp(mpp;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
     elseif hasproperty(mpp,:B)
         W = mpp.B
     end
+    is_singlesided = hasproperty(mpp,:b)
+
+    # Dimensions
+    n, nth = size(f_theta) 
+    m = is_singlesided ? length(mpp.b) : length(mpp.bu)
+    ms = m - size(mpp.A,1)
+
+    if is_singlesided || ms == 0
+        A = mpp.A
+    else
+        A =[I(n)[1:ms,:];mpp.A]
+    end
 
     eq_ids = hasproperty(mpp,:eq_ids) && !isnothing(mpp.eq_ids) ? mpp.eq_ids : Int[]
     if hasproperty(mpp,:sense)
@@ -26,30 +35,34 @@ function setup_mpp(mpp;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
         eq_ids = eq_ids ∪ findall(mpp.senses.&DAQPBase.EQUALITY.!=0)
     end
 
-    n, nth = size(f_theta) 
-    m = length(mpp.b)
-
     bnd_tbl = (haskey(mpp,:bounds_table) && !isnothing(mpp.bounds_table)) ? mpp.bounds_table : collect(1:m)
     out_inds = haskey(mpp,:out_inds) && !isnothing(mpp.out_inds) ? mpp.out_inds : collect(1:n)
 
-    zlims =  get_lims(mpp.A,mpp.b,W,out_inds)
-
+    ## TODO: handle double sided + simple bounds... 
+    zlims = is_singlesided ? get_lims(A,mpp.b,W,out_inds) : zeros(0,0)
 
     free_ids = setdiff(1:nth,fix_ids)
     nth = length(free_ids) 
 
-    F = [f_theta[:,free_ids] mpp.f+f_theta[:,fix_ids]*fix_vals]
-    B = [W[:,free_ids] mpp.b+W[:,fix_ids]*fix_vals]
+    if is_singlesided
+        F = [f_theta[:,free_ids] mpp.f+f_theta[:,fix_ids]*fix_vals]
+        B = [W[:,free_ids] mpp.b+W[:,fix_ids]*fix_vals]
+    else
+        b_offset = W[:,fix_ids]*fix_vals
+        f_offset = f_theta[:,fix_ids]*fix_vals
+        B = [W[:,free_ids] mpp.bu+b_offset mpp.bl+b_offset]
+        F = [f_theta[:,free_ids] mpp.f+f_offset mpp.f+f_offset]
+    end
 
     # If H not symmetric => MPVI
     if(!isapprox(mpp.H, mpp.H', rtol=1e-9))
-        AHinv = mpp.A / mpp.H
-        HinvAt = mpp.A / mpp.H'
-        AHinvA = HinvAt*mpp.A'
-        #AHinvA = mpp.A*AHinv'
+        AHinv = A / mpp.H
+        HinvAt = A / mpp.H'
+        AHinvA = HinvAt*A'
+        #AHinvA = A*AHinv'
         HinvF = Matrix(-(mpp.H\F)')
         d = Matrix((B-mpp.A*HinvF')')
-        return MPVI(mpp.H, Matrix(F'),mpp.A, Matrix(B'),HinvAt[:,out_inds],AHinvA,HinvF[:,out_inds],d,
+        return MPVI(mpp.H, Matrix(F'), A, Matrix(B'),HinvAt[:,out_inds],AHinvA,HinvF[:,out_inds],d,
                     nth,n,bnd_tbl,ones(m),eq_ids,out_inds,zlims)
     end
 
@@ -57,13 +70,14 @@ function setup_mpp(mpp;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
     H = (mpp.H+mpp.H')/2
     R = cholesky(H, check=false)
     if(!issuccess(R)) # Cannot formulate as an LDP => return MPQP
-        return MPQP(H,Matrix(F'),mpp.A,Matrix(B'),nth,n,bnd_tbl,ones(m),eq_ids,n-rank(H),out_inds,zlims)
+        return MPQP(H,Matrix(F'),A,Matrix(B'),nth,n,bnd_tbl,ones(m),eq_ids,n-rank(H),out_inds,zlims)
     end
 
     # H is symmetric + positive definite => return MPLDP
-    M = mpp.A/R.U
+    M = A/R.U
     V = (R.L)\F
     d = Matrix((B + M*V)')# Col. major...
+    !is_singlesided && (V = V[:,1:end-1]) # Remove extra col
 
     norm_factors = ones(m)
     if(normalize)
@@ -82,7 +96,8 @@ function setup_mpp(mpp;normalize=true, fix_ids=Int[],fix_vals=zeros(0))
     RinvV = -(R.U\V)'
     MRt = MRt[:,out_inds]
     RinvV = RinvV[:,out_inds]
-
+    MM = M*M'
+    M = M[ms+1:end,:] # Remove rows for simple constraints 
     return MPLDP(M*M', M, MRt, RinvV, d, nth, n, bnd_tbl, norm_factors, eq_ids,zlims)
 end
 

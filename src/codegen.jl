@@ -1,3 +1,5 @@
+using Printf 
+
 function write_array(f,A,name,type)
     N = length(A)
     write(f,"$type $name[$N] = {\n")
@@ -154,4 +156,196 @@ int main(){
 }
           """)
     close(fex)
+end
+
+function codegen_implicit(mpp;fname="pdaqp_workspace", dir="codegen", opt_settings=nothing, src=true, float_type="double",warm_start=false)
+    length(dir)==0 && (dir="codegen")
+    dir[end] != '/' && (dir*="/") ## Make sure it is a correct directory path
+
+    output_transform = get_codegen_output_transform(mpp)
+    objective_transform = get_codegen_objective_transform(mpp)
+
+    # Generate mpldp
+    mpldp = setup_mpp(mpp)
+    mpldp isa MPLDP || error("codegen_daqp requires a positive definite Hessian H")
+    size(mpldp.d, 1) == mpldp.n_theta + 2 || error("codegen_implicit requires a problem with upper and lower affine bounds")
+
+    # Generate DAQP workspace
+    d = DAQPBase.Model() 
+    !isnothing(opt_settings) && DAQPBase.settings(d,opt_settings)
+    m = length(mpp.bu)
+    senses  = hasproperty(mpp, :senses) ? Vector{Cint}(mpp.senses) : zeros(Cint, m)
+    DAQPBase.setup(d, Matrix{Cdouble}(mpp.H), vec(Cdouble.(mpp.f)),
+                   Matrix{Cdouble}(mpp.A), vec(Cdouble.(mpp.bu)),
+                   vec(Cdouble.(mpp.bl)), senses)
+
+    work_symbol = "daqp_work" # TODO make it possible to change the name of this 
+    DAQPBase.codegen(d;fname,dir,src)
+
+    if( float_type == "float" || float_type == "single")
+        # Append #define DAQP_SINGLE_PRECISION at the top of types
+        mv(joinpath(dir,"types.h"),joinpath(dir,"types_old.h"))
+        fold = open(joinpath(dir,"types_old.h"),"r")
+        s = read(fold, String)
+        fnew = open(joinpath(dir,"types.h"),"w")
+        write(fnew, "#ifndef DAQP_SINGLE_PRECISION\n # define DAQP_SINGLE_PRECISION\n#endif \n"*s);
+        close(fold)
+        close(fnew)
+        rm(joinpath(dir,"types_old.h"))
+    end
+
+    # Append MPP-specific data/functions
+    render_pdaqp_workspace(mpldp;fname,dir,float_type, fmode="a",warm_start, output_transform, objective_transform, work_symbol)
+    @info "Generated code for parameteric program" dir fname
+end
+
+function copy_daqp_codegen_headers(dir)
+    include_dir = normpath(dirname(DAQPBase.libdaqp), "..", "include", "daqp")
+    for file in ("daqp.h", "auxiliary.h", "factorization.h", "constants.h", "types.h")
+        cp(joinpath(include_dir, file), joinpath(dir, file); force=true)
+    end
+end
+
+function get_codegen_output_transform(mpp)
+    f_theta = hasproperty(mpp, :f_theta) ? mpp.f_theta : mpp.F
+    nth = size(f_theta, 2)
+    n = size(mpp.H, 1)
+
+    if hasproperty(mpp, :post_transform) && !isnothing(mpp.post_transform)
+        Z, affine = mpp.post_transform
+        Z = Matrix{Float64}(Z)
+        affine = Matrix{Float64}(affine)
+        size(Z, 1) == size(affine, 1) || error("post_transform components must have the same number of rows")
+        size(affine, 2) == nth + 1 || error("post_transform affine term must have nth+1 columns")
+        out_inds = hasproperty(mpp, :out_inds) && !isnothing(mpp.out_inds) ? collect(mpp.out_inds) : collect(1:size(Z, 1))
+    else
+        Z = Matrix{Float64}(I, n, n)
+        affine = zeros(Float64, n, nth + 1)
+        out_inds = hasproperty(mpp, :out_inds) && !isnothing(mpp.out_inds) ? collect(mpp.out_inds) : collect(1:n)
+    end
+
+    maximum(out_inds) <= size(Z, 1) || error("out_inds contains an index outside the post-transform output")
+    return Z[out_inds, :], affine[out_inds, :]
+end
+
+function get_codegen_objective_transform(mpp)
+    f_theta = hasproperty(mpp, :f_theta) ? mpp.f_theta : mpp.F
+    f_offset = vec(Float64.(mpp.f))
+    R = cholesky((Float64.(mpp.H) + Float64.(mpp.H)') / 2)
+    return R.L \ Float64.(f_theta), R.L \ f_offset
+end
+
+function render_pdaqp_workspace(mpldp;fname="pdaqp_workspace",dir="",fmode="w", float_type="double",
+        warm_start=false, output_transform, objective_transform, work_symbol="daqp_work")
+    nth = mpldp.n_theta
+    n_reduced = size(output_transform[1], 2)
+    n_output = size(output_transform[1], 1)
+    m = length(mpldp.norm_factors)
+    Dth = mpldp.d[1:nth, :]
+    du = mpldp.d[nth + 1, :]
+    dl = mpldp.d[nth + 2, :]
+    Z_map, affine_offset = output_transform
+    Vth, v_offset = objective_transform
+
+    # Setup files
+    fh = open(dir*fname*".h", fmode)
+    fsrc = open(dir*fname*".c", fmode)
+
+    # HEADER 
+    hguard = uppercase(fname)*"_PDAQP_H"
+    @printf(fh, "#ifndef %s\n",   hguard);
+    @printf(fh, "#define %s\n\n", hguard);
+
+    @printf(fh, "#define PDAQP_N_PARAMETERS %d\n",nth);
+    @printf(fh, "#define PDAQP_N_CONSTRAINTS %d\n",m);
+    @printf(fh, "#define PDAQP_N_REDUCED_SOLUTION %d\n",n_reduced);
+    @printf(fh, "#define PDAQP_N_SOLUTION %d\n",n_output);
+
+    @printf(fh, "#define DAQP_WARMSTART %d\n\n", warm_start ? 1 : 0)
+
+    @printf(fh, "extern c_float mpqp_parameter[%d];\n", nth);
+
+    @printf(fh, "extern c_float Dth[%d];\n", nth*m);
+    @printf(fh, "extern c_float du[%d];\n", m);
+    @printf(fh, "extern c_float dl[%d];\n\n", m);
+
+    @printf(fh, "extern c_float solution_map[%d];\n", n_output*n_reduced);
+    @printf(fh, "extern c_float solution_offset[%d];\n\n", n_output*(nth+1));
+
+
+    @printf(fh, "void %s_form_qp(const c_float* parameter);\n", fname);
+    @printf(fh, "int %s_solve(const c_float* parameter, c_float* solution);\n\n", fname);
+
+
+    # SRC 
+    write_array(fsrc,zeros(nth),"mpqp_parameter","c_float");
+    write_array(fsrc,zeros(n_reduced),"qp_v","c_float");
+    write_array(fsrc,Dth,"Dth", "c_float");
+    write_array(fsrc,du,"du", "c_float");
+    write_array(fsrc,dl,"dl", "c_float");
+    write_array(fsrc,copy(Vth'),"Vth", "c_float");
+    write_array(fsrc,v_offset,"v_offset", "c_float");
+    write_array(fsrc,copy(Z_map'),"solution_map", "c_float");
+    write_array(fsrc,copy(affine_offset'),"solution_offset", "c_float");
+
+    @printf(fsrc, "#include \"daqp.h\"\n");
+    write(fsrc, """
+void $(fname)_form_qp(const c_float* parameter){
+    int i,j,disp;
+    c_float val;
+
+    for(i = 0; i < $(nth); ++i){
+        mpqp_parameter[i] = parameter[i];
+    }
+
+    $(work_symbol).v = qp_v;
+    disp = 0;
+    for(i = 0; i < $(n_reduced); ++i){
+        for(j = 0, val = 0; j < $(nth); ++j){
+            val += parameter[j] * Vth[disp++];
+        }
+        qp_v[i] = v_offset[i] + val;
+    }
+
+    disp = 0;
+    for(i = 0; i < $(m); ++i){
+        for(j = 0, val = 0; j < $(nth); ++j){
+            val += parameter[j] * Dth[disp++];
+        }
+        $(work_symbol).dupper[i] = du[i] + val;
+        $(work_symbol).dlower[i] = dl[i] + val;
+    }
+}
+
+int $(fname)_solve(const c_float* parameter, c_float* solution){
+    int i,j,disp,exitflag;
+    c_float val;
+
+    $(fname)_form_qp(parameter);
+#if !DAQP_WARMSTART
+    reset_daqp_workspace(&$(work_symbol));
+#endif
+    exitflag = daqp_ldp(&$(work_symbol));
+    if(exitflag > 0){
+        ldp2qp_solution(&$(work_symbol));
+        disp = 0;
+        for(i = 0; i < $(n_output); ++i){
+            for(j = 0, val = 0; j < $(n_reduced); ++j){
+                val += solution_map[disp++] * $(work_symbol).x[j];
+            }
+            for(j = 0; j < $(nth); ++j){
+                val += solution_offset[i * ($(nth) + 1) + j] * parameter[j];
+            }
+            val += solution_offset[(i + 1) * ($(nth) + 1) - 1];
+            solution[i] = val;
+        }
+    }
+    return exitflag;
+}
+""")
+
+    @printf(fh, "#endif // ifndef %s\n", hguard);
+
+    close(fh)
+    close(fsrc)
 end

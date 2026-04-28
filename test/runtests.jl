@@ -435,6 +435,50 @@ end
     end
 end
 
+@testset "Implicit codegen with post transform" begin
+    H = Float64[1 0; 0 1]
+    f = zeros(2,1)
+    F = zeros(2,1)
+    A = Float64[1 1]
+    bu = Float64[2; 2; 0]
+    bl = Float64[0; 0; 0]
+    B = Float64[0; 0; 1;;]
+    senses = Cint[0, 0, DAQPBase.EQUALITY]
+    mpQP = (H=H, f=f, F=F, A=A, bu=bu, bl=bl, B=B, senses=senses)
+
+    reduced_mpQP = ParametricDAQP.preprocess_eliminate_equalities(mpQP)
+    @test size(reduced_mpQP.H, 1) == 1
+    @test size(reduced_mpQP.post_transform[1], 1) == 2
+
+    srcdir = tempname()
+    ParametricDAQP.codegen_implicit(reduced_mpQP; dir=srcdir, fname="implicit_test", src=true)
+    @test isfile(joinpath(srcdir, "implicit_test.c"))
+
+    if !isnothing(Sys.which("gcc"))
+        testlib = "implicit_test." * Base.Libc.Libdl.dlext
+        daqp_lib = DAQPBase.libdaqp
+        daqp_libdir = dirname(daqp_lib)
+        run(Cmd(`gcc -lm -fPIC -O3 -shared -o $testlib implicit_test.c $daqp_lib -Wl,-rpath,$daqp_libdir`; dir=srcdir))
+        templib = joinpath(srcdir, testlib)
+        libhandle = Base.Libc.Libdl.dlopen(templib)
+        solve_ptr = Base.Libc.Libdl.dlsym(libhandle, :implicit_test_solve)
+
+        for θ in ([0.0], [0.25], [1.0], [1.75])
+            z = zeros(Cdouble, 2)
+            exitflag = ccall(solve_ptr, Cint,
+                             (Ptr{Cdouble}, Ptr{Cdouble}), Cdouble.(θ), z)
+            fθ = mpQP.f[:,1] + mpQP.F * θ
+            buθ = mpQP.bu + mpQP.B * θ
+            blθ = mpQP.bl + mpQP.B * θ
+            xref, _, exitflag_ref, _ = DAQP.quadprog(mpQP.H, fθ, mpQP.A, buθ, blθ, mpQP.senses)
+            @test exitflag == DAQPBase.OPTIMAL
+            @test exitflag_ref == DAQPBase.OPTIMAL
+            @test norm(z - xref) < 1e-8
+        end
+
+        Base.Libc.Libdl.dlclose(libhandle)
+    end
+end
 @testset "C-generated BST with store_transpose" begin
     # Setup mpQP
     H =  [1.5064 0.4838; 0.4838 1.5258];
