@@ -92,7 +92,7 @@ function classify_regions(CRs,hps, reg2hp, ws; reg_ids = nothing, hp_ids = nothi
     reg_ids = isnothing(reg_ids) ?  (1:length(CRs)) : findall(reg_ids)
     isnothing(hp_ids) && (hp_ids = 1:size(hps,2))
     nth, nh = size(hps,1)-1, length(hp_ids)
-    
+
     nR = length(CRs)
     nregs = [falses(nR) for _ in 1:nh]
     pregs = [falses(nR) for _ in 1:nh]
@@ -222,10 +222,15 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
         verbose > 0 && @warn "Cannot build binary search tree. Solution status: $(sol.status)"
         return nothing
     end
-    verbose > 0 && @info "Building binary search tree" 
+    verbose > 0 && @info "Building binary search tree"
 
     CRs = clipping ? get_unsaturated(sol.CRs) : sol.CRs
 
+    if(length(CRs) == 1) # Single region => can directly return
+        zlims = clipping ? sol.problem.out_lims : zeros(0,2)
+        dim = size(CRs[1].Ath, 1) + 1
+        return BinarySearchTree(zeros(0,dim),[CRs[1].z],Int[1],Int[0],0,Matrix{Float64}[], zlims)
+    end
     # Get halfplanes and feedbacks
     hps,reg2hp = get_halfplanes(CRs;tol=hp_tol)
     fbs, fb_ids = get_feedbacks(CRs;tol=fb_tol)
@@ -294,10 +299,10 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
         next_id = length(hp_list)+1
         hp_list[self_id] = hp_id
         jump_list[self_id] = next_id-self_id
-        
-        # Make room for the two new nodes that are spawned 
+
+        # Make room for the two new nodes that are spawned
         push!(hp_list,0,0)
-        push!(jump_list,0,0) 
+        push!(jump_list,0,0)
 
         # Spawn new nodes
         for (new_regs,new_regs_comp,next, hp_sign) in [(new_nregs,new_pregs,next_id,-1), (new_pregs,new_nregs,next_id+1,1)]
@@ -322,7 +327,7 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
     # Remove superfluous HPs
     hps,hp_list= remove_redundant_hps(jump_list,hp_list,hps)
 
-    # Denormalize 
+    # Denormalize
     hps = denormalize(hps,sol.scaling,sol.translation;hps=true)
     fbs = [denormalize(f,sol.scaling,sol.translation) for f in fbs]
 
@@ -339,16 +344,16 @@ end
 function evaluate(bst::BinarySearchTree,θ)
     id =  1 # start in root note
     next_id = id+bst.jump_list[id]
-    while next_id != id 
-        hid = bst.hp_list[id]  
-        if bst.halfplanes[1:end-1,hid]'*θ  ≤ bst.halfplanes[end,hid] 
-            id = next_id+1 
+    while next_id != id
+        hid = bst.hp_list[id]
+        if bst.halfplanes[1:end-1,hid]'*θ  ≤ bst.halfplanes[end,hid]
+            id = next_id+1
         else
             id = next_id
         end
         next_id = id+bst.jump_list[id]
     end
-    fid = bst.hp_list[id]  
+    fid = bst.hp_list[id]
     z = bst.feedbacks[fid]'*[θ;1]
     if(!isempty(bst.clipping))
         z = clamp.(z,bst.clipping[:,1],bst.clipping[:,2])

@@ -22,10 +22,10 @@ include("utils.jl")
     mpQP,Θ = generate_mpQP(n,m,nth)
     sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
 
-    # Test for 10000 random points 
+    # Test for 10000 random points
     N = 10000
     ths = 2*rand(nth,N).-1;
-    containment_inds = zeros(Int,N) 
+    containment_inds = zeros(Int,N)
     errs_primal,errs_dual = zeros(N),zeros(N)
     for n = 1:N
         θ = ths[:,n]
@@ -57,10 +57,10 @@ end
     Θ.lb[:] = -(rand(nth).+2) # Make unsymmetric
     sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
 
-    # Test for 10000 random points 
+    # Test for 10000 random points
     N = 10000
     ths = 2*rand(nth,N).-1;
-    containment_inds = zeros(Int,N) 
+    containment_inds = zeros(Int,N)
     errs_primal,errs_dual = zeros(N),zeros(N)
     for n = 1:N
         θ = ths[:,n]
@@ -81,9 +81,9 @@ end
 end
 
 # Example 2 in Ahmadi-Moshkenani 2018
-@testset "Full-dim LICQ" begin 
+@testset "Full-dim LICQ" begin
     n, nth = 4,2
-    H = diagm(ones(n)) 
+    H = diagm(ones(n))
     f = zeros(n,1)
     F = zeros(n,nth)
     A = [[1 0;
@@ -94,7 +94,7 @@ end
     B = [1.0 0; -1 0; 0 -1; 1 1];
     mpQP = (H=H,f=f,F=F,
             A=A,b=b,B=B)
-    Θ = (ub=2*ones(nth),lb=-2*ones(nth)) 
+    Θ = (ub=2*ones(nth),lb=-2*ones(nth))
 
     opts = ParametricDAQP.Settings()
     opts.verbose=1;
@@ -103,9 +103,9 @@ end
 end
 
 # Non facet to facet
-@testset "Violated Facet-to-facet" begin 
+@testset "Violated Facet-to-facet" begin
     n, nth = 3,2
-    H = diagm(ones(n)) 
+    H = diagm(ones(n))
     f = zeros(n,1)
     F = zeros(n,nth)
     A = [1 0 -1;
@@ -119,7 +119,7 @@ end
 
     mpQP = (H=H,f=f,F=F,
             A=A,b=b,B=B)
-    Θ = (ub=1.5*ones(nth),lb=-1.5*ones(nth)) 
+    Θ = (ub=1.5*ones(nth),lb=-1.5*ones(nth))
 
     opts = Dict("store_points"=>true, "verbose"=>1, "lowdim_tol" => 0)
     sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
@@ -131,9 +131,9 @@ end
 end
 
 
-@testset "Lower-dimensional critical regions with SCS" begin 
+@testset "Lower-dimensional critical regions with SCS" begin
     n, nth = 2,1
-    H = diagm(ones(n)) 
+    H = diagm(ones(n))
     f = zeros(n,1)
     F = zeros(n,nth)
     A = [0 -1.0;
@@ -146,7 +146,7 @@ end
 
     mpQP = (H=H,f=f,F=F,
             A=A,b=b,B=B)
-    Θ = (ub=5*ones(nth),lb=1*ones(nth)) 
+    Θ = (ub=5*ones(nth),lb=1*ones(nth))
 
     opts = ParametricDAQP.Settings()
     opts.verbose=1;
@@ -209,11 +209,11 @@ end
     H = mpQP.H
     f = mpQP.f
     F = mpQP.F
-    A = [mpQP.A;zeros(nth,n)] 
+    A = [mpQP.A;zeros(nth,n)]
     b = [mpQP.b;ones(nth)]
     B = [mpQP.B;-I(nth)]
-    bounds_table = [mpQP.bounds_table;2m+1:2m+nth]  
-    senses = [mpQP.senses;zeros(Cint,nth)]  
+    bounds_table = [mpQP.bounds_table;2m+1:2m+nth]
+    senses = [mpQP.senses;zeros(Cint,nth)]
     mpQP = (H=H,f=f,F=F,
                 A=A,b=b,B=B,bounds_table=bounds_table,senses=senses)
     sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
@@ -239,7 +239,7 @@ end
     A = mpQP.A
     b = mpQP.b
     B = mpQP.B[:,3:4]
-    bounds_table = mpQP.bounds_table  
+    bounds_table = mpQP.bounds_table
     senses = mpQP.senses
     mpQP = (H=H,f=f,F=F,
                 A=A,b=b,B=B,bounds_table=bounds_table,senses=senses)
@@ -259,10 +259,10 @@ end
     for cr in sol.CRs
         @test 5 ∈ cr.AS
     end
-    # Test for 10000 random points 
+    # Test for 10000 random points
     N = 10000
     ths = 2*rand(nth,N).-1;
-    containment_inds = zeros(Int,N) 
+    containment_inds = zeros(Int,N)
     errs_primal,errs_dual = zeros(N),zeros(N)
     for n = 1:N
         θ = ths[:,n]
@@ -282,8 +282,8 @@ end
 
 @testset "Primal degenerate LP" begin
     H =  zeros(4,4);
-    f = [1.0;1.0;0;0] 
-    F = zeros(4,2) 
+    f = [1.0;1.0;0;0]
+    F = zeros(4,2)
     A = [-1.0 0 0 0;
          -1 0 -1 0;
          -1 0 0 0;
@@ -324,8 +324,8 @@ end
 
 @testset "Dual degenerate LP" begin
     H =  zeros(2,2);
-    f = [-2.0;-1-0] 
-    F = zeros(2,2) 
+    f = [-2.0;-1-0]
+    F = zeros(2,2)
     A = [1.0 3;
          2 1;
          1 0;
@@ -336,7 +336,7 @@ end
          1 1;
          0 0;
          0 0;
-        ] 
+        ]
     b = [9.0;8;4;0;0];
 
     mpQP = (H=H,f=f,F=F,A=A,b=b,B=B, out_inds=[1])
@@ -477,6 +477,35 @@ end
         end
 
         Base.Libc.Libdl.dlclose(libhandle)
+@testset "C-generated BST with store_transpose" begin
+    # Setup mpQP
+    H =  [1.5064 0.4838; 0.4838 1.5258];
+    f = zeros(2,1)
+    F = [9.6652 5.2115; 7.0732 -7.0879];
+    A = [1.0 0; -1 0; 0 1; 0 -1];
+    B = zeros(4,2);
+    b = 2*ones(4);
+    mpQP = (H=H,f=f,F=F,A=A,b=b,B=B)
+
+    # Get a reference point
+    θ = [-0.75;0.5]
+    f = mpQP.f[:,1]+mpQP.F*θ
+    b = mpQP.b[:,1]+mpQP.B*θ
+    zref,~,~,info= DAQP.quadprog(mpQP.H,f,mpQP.A,b,-1e30*ones(4),zeros(Cint,4));
+
+    # Setup parameter region of interest
+    ub,lb  = 1.5*ones(2), -1.5*ones(2)
+    Θ = (ub=ub,lb=lb)
+
+    opts = ParametricDAQP.Settings()
+    sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
+
+    srcdir = tempname()
+    status = ParametricDAQP.codegen(sol; dir=srcdir, store_transpose=true, store_offset=true)
+    @test status > 0
+    if(!isnothing(Sys.which("gcc")))
+        testlib = "tree_test."* Base.Libc.Libdl.dlext
+        run(Cmd(`gcc -lm -fPIC -O3 -msse3 -xc -shared -o $testlib pdaqp.c`; dir=srcdir))
     end
 end
 
@@ -485,9 +514,24 @@ end
     mpQP,Θ = generate_mpQP(n,0,nth)
     opts = ParametricDAQP.Settings()
     sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
+    bst = ParametricDAQP.build_tree(sol)
     th = randn(nth)
+    zunc = (-mpQP.H\(mpQP.F*th +mpQP.f))
     @test length(sol.CRs) == 1
-    @test norm(sol.CRs[1].z'*[th;1] - (-mpQP.H\(mpQP.F*th +mpQP.f))) < 1e-6
+    @test norm(sol.CRs[1].z'*[th;1] - zunc) < 1e-6
+    @test norm(ParametricDAQP.evaluate(bst,th) - zunc) < 1e-6
+    for dual in [true,false]
+        srcdir = tempname()
+        status = ParametricDAQP.codegen(sol; dir=srcdir,dual=dual)
+        if(!isnothing(Sys.which("gcc")))
+            testlib = "tree_test."* Base.Libc.Libdl.dlext
+            run(Cmd(`gcc -lm -fPIC -O3 -msse3 -xc -shared -o $testlib "pdaqp.c"`; dir=srcdir))
+            z, λ = zeros(Cfloat, n), zeros(Cfloat, 0)
+            global templib = joinpath(srcdir,testlib)
+            ccall(("pdaqp_evaluate", templib), Cvoid, (Ptr{Cfloat}, Ptr{Cfloat}, Ptr{Cfloat}), Cfloat.(th),z,λ)
+            @test norm(z - zunc) < 1e-5
+        end
+    end
 end
 
 @testset "Clipping for C-generated BST" begin
@@ -528,7 +572,7 @@ end
     end
 end
 @testset "basic_mpVI.jl" begin
-    # [ 1 1]     [-1]  
+    # [ 1 1]     [-1]
     # [-1 1] x + [ 1] = 0
     # x2>=θ;  -1<=θ<=1
     # Solution: if θ >= 0 x*=[(1-θ); θ], else x* = [1;0]
@@ -553,12 +597,12 @@ end
     θ = [0.1] # Test θ >= 0 =>  x*=[(1-θ); θ]
     x_sol = evaluate_solution(sol, θ)
     @test norm(x_sol - [1. - θ[1]; θ[1]]) < tol * 10
-    x_ref, _ = DAQPBase.solve_avi(mpVI.H, mpVI.F' * [θ; 1], mpVI.A, mpVI.B' * [θ; 1])
+    x_ref, _ = DAQPBase.avi(mpVI.H, mpVI.F' * [θ; 1], mpVI.A, mpVI.B' * [θ; 1])
     @test norm(x_sol - x_ref) < tol * 10
     θ = [-0.1]# Test  θ < 0 =>  x*=[1; 0]
     x_sol = evaluate_solution(sol, θ)
     @test x_sol[1] == 1. && x_sol[2] == 0.
-    x_ref, _ = DAQPBase.solve_avi(mpVI.H, mpVI.F' * [θ; 1], mpVI.A, mpVI.B' * [θ; 1])
+    x_ref, _ = DAQPBase.avi(mpVI.H, mpVI.F' * [θ; 1], mpVI.A, mpVI.B' * [θ; 1])
     @test norm(x_sol - x_ref) < tol * 10
 end
 
@@ -571,7 +615,7 @@ end
 
     mpVI, Θ = generate_mpVI(n, m, nth)
     sol, r = ParametricDAQP.mpsolve(mpVI, Θ; opts)
-    # Test for 1000 random points 
+    # Test for 1000 random points
     N = 1000
     θs = (2 * rand(nth, N)) .- 1
     errs = zeros(N)
@@ -579,7 +623,7 @@ end
         θ = θs[:, n]
         xsol = evaluate_solution(sol, θ)
         # Compare with standard solution of VI
-        xref, _ = DAQPBase.solve_avi(mpVI.H, mpVI.F' * [θ; 1], mpVI.A, mpVI.B' * [θ; 1])
+        xref, _ = DAQPBase.avi(mpVI.H, mpVI.F' * [θ; 1], mpVI.A, mpVI.B' * [θ; 1])
         errs[n] = norm(xsol - xref) / norm(xsol)
     end
     @test maximum(errs) < tol * 10
@@ -588,7 +632,7 @@ end
 
 
 @testset "VI_unconstrained.jl" begin
-    # [ 1 1]      [-1]  
+    # [ 1 1]      [-1]
     # [-1 1] x +  [ 1] = 0
     # solution: [1;0]
     H = Float64[1 1; -1 1]
@@ -596,12 +640,12 @@ end
     A = zeros(0, 2)
     b = zeros(0)
     tol = 10^(-5)
-    x, r = DAQPBase.solve_avi(H, f, A, b)
+    x, fval, exitflag, info = DAQPBase.avi(H, f, A, b)
     @test(norm(x - [1; 0]) <= tol * 10)
 end
 
 @testset "VI.jl" begin
-    # [ 1 1]     [-1]  
+    # [ 1 1]     [-1]
     # [-1 1] x + [ 1] = 0
     # x2>=1
     # solution: [0;1]
@@ -610,6 +654,6 @@ end
     A = Float64[0 -1]
     b = Float64[-1]
     tol = 10^(-5)
-    x, λ = DAQPBase.solve_avi(H, f, A, b)
+    x, fval, exitflag, info = DAQPBase.avi(H, f, A, b)
     @test(norm(x - [0; 1]) <= tol * 10)
 end
