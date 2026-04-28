@@ -63,4 +63,9 @@ function ParametricDAQP.get_mpp(moi_model::MOI.ModelLike, vars; out_vars=nothing
     return moi2mpqp(moi_model,vars;out_vars,eliminate_equalities)
 end
 
+function ParametricDAQP.codegen_implicit(moi_model::MOI.ModelLike, vars; out_vars=nothing, eliminate_equalities=false, fname="pdaqp_workspace", dir="codegen", opt_settings=nothing, src=true, float_type="double",warm_start=false)
+    mpp,TH = moi2mpqp(moi_model,vars;out_vars,eliminate_equalities)
+    ParametricDAQP.codegen_implicit(mpp;fname,dir,opt_settings,src,float_type,warm_start)
+end
+
 end
