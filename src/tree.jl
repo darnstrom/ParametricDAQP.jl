@@ -140,7 +140,7 @@ function classify_regions(CRs,hps, reg2hp, ws; reg_ids = nothing, hp_ids = nothi
     nR = length(CRs)
     pids = _distributed_workers()
     if _should_parallelize_classification(length(reg_ids), length(hp_ids), length(pids))
-        return _parallel_classify_regions(CRs, hps, reg2hp, reg_ids, hp_ids, branches, size(hps, 1) - 1, nR)
+        return _parallel_classify_regions(CRs, hps, reg2hp, reg_ids, hp_ids, branches, size(hps, 1) - 1, nR, ws)
     end
 
     nregs = falses(length(hp_ids), nR)

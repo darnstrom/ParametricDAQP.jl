@@ -166,14 +166,27 @@ function _clear_classify_workers!(pids)
     return nothing
 end
 
-function _parallel_classify_regions(CRs, hps, reg2hp, reg_ids, hp_ids, branches, n_theta, nR)
+function _parallel_classify_regions(CRs, hps, reg2hp, reg_ids, hp_ids, branches, n_theta, nR, ws)
     pids = _distributed_workers()
-    batches = _split_batches(reg_ids, length(pids))
+    batches = _split_batches(reg_ids, length(pids) + 1)
     isempty(batches) && return [falses(nR) for _ in hp_ids], [falses(nR) for _ in hp_ids]
 
-    pool = Distributed.CachingPool(pids)
     payload = [(batch, hp_ids, branches) for batch in batches]
-    chunk_results = Distributed.pmap(ParametricDAQP._process_classify_chunk, pool, payload)
+    chunk_results = Vector{Any}(undef, length(payload))
+    remote_jobs = min(length(pids), max(0, length(payload) - 1))
+    futures = Vector{Any}(undef, remote_jobs)
+    for i in 1:remote_jobs
+        futures[i] = Distributed.remotecall(ParametricDAQP._process_classify_chunk, pids[i], payload[i])
+    end
+
+    local_payload = payload[end]
+    local_nregs = falses(length(hp_ids), length(local_payload[1]))
+    local_pregs = falses(length(hp_ids), length(local_payload[1]))
+    _classify_regions_chunk!(local_nregs, local_pregs, CRs, hps, reg2hp, ws, local_payload[1], hp_ids, branches; local_columns=true)
+    chunk_results[end] = (reg_ids=local_payload[1], nregs=local_nregs, pregs=local_pregs)
+    for i in 1:remote_jobs
+        chunk_results[i] = fetch(futures[i])
+    end
 
     nregs_mat = falses(length(hp_ids), nR)
     pregs_mat = falses(length(hp_ids), nR)
