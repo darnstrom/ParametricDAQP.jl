@@ -1,11 +1,13 @@
 module ParametricDAQP
 
+using Distributed
 using LinearAlgebra, DAQPBase, PolyDAQP
 using BitIntegers, ProgressMeter
 export MPLDP
 
 include("types.jl")
 include("utils.jl")
+include("distributed.jl")
 include("mpsolve.jl")
 include("plot.jl")
 include("tree.jl")

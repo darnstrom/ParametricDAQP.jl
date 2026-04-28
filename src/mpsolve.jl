@@ -93,38 +93,55 @@ function mpdaqp_explicit(prob,Θ,AS0;opts = Settings())
     j = 0
 
     ignore_masks = get_ignore_masks(prob,Θ,typeof(as0),id_cands,ws)
+    worker_pids = _initialize_explicit_workers!(prob, Θ, opts)
 
     # Start exploration 
-    while(!isempty(ws.S) || !isempty(ws.Sdown) || !isempty(ws.Sup))
+    try
+        while(!isempty(ws.S) || !isempty(ws.Sdown) || !isempty(ws.Sup))
 
-        # Check time limit 
-        if(time_ns()-t0 > time_limit)
-            status = :TimeLimitReached
-            break
-        end
-        if(length(ws.F) > opts.region_limit)
-            status = :RegionLimitReached
-            break
-        end
+            # Check time limit 
+            if(time_ns()-t0 > time_limit)
+                status = :TimeLimitReached
+                break
+            end
+            if(length(ws.F) > opts.region_limit)
+                status = :RegionLimitReached
+                break
+            end
 
-        while(length(ws.S) < opts.chunk_size && !isempty(ws.Sdown)) # First try to move down...
-            explore_supersets(pop!(ws.Sdown),ws,id_cands,ws.S,ignore_masks)
-        end
-        while(length(ws.S) < opts.chunk_size && !isempty(ws.Sup)) # ... then try to move up
-            explore_subsets(pop!(ws.Sup),ws,id_cands,ws.S)
-        end
+            while(length(ws.S) < opts.chunk_size && !isempty(ws.Sdown)) # First try to move down...
+                explore_supersets(pop!(ws.Sdown),ws,id_cands,ws.S,ignore_masks)
+            end
+            while(length(ws.S) < opts.chunk_size && !isempty(ws.Sup)) # ... then try to move up
+                explore_subsets(pop!(ws.Sup),ws,id_cands,ws.S)
+            end
 
-        opts.verbose>0 && print_ws(ws,(j+=1))
+            opts.verbose>0 && print_ws(ws,(j+=1))
 
-        # Process pending AS
-        while(!isempty(ws.S))
-            as = pop!(ws.S);
-            region,up,down= isoptimal(as,ws,prob,opts)
-            !isnothing(region) && push!(ws.F,region)
-            up && push!(ws.Sup,as)
-            down && push!(ws.Sdown,as)
+            # Process pending AS
+            if _should_parallelize_explicit(length(ws.S), length(worker_pids))
+                pending = reverse!(copy(ws.S))
+                empty!(ws.S)
+                for batch_result in _parallel_process_explicit_batches(pending, worker_pids)
+                    ws.nLPs += batch_result.nLPs
+                    for result in batch_result.results
+                        !isnothing(result.region) && push!(ws.F, result.region)
+                        result.up && push!(ws.Sup, result.as)
+                        result.down && push!(ws.Sdown, result.as)
+                    end
+                end
+            else
+                while(!isempty(ws.S))
+                    as = pop!(ws.S);
+                    region,up,down= isoptimal(as,ws,prob,opts)
+                    !isnothing(region) && push!(ws.F,region)
+                    up && push!(ws.Sup,as)
+                    down && push!(ws.Sdown,as)
+                end
+            end
         end
-
+    finally
+        _clear_explicit_workers!(worker_pids)
     end
     # Exploration completed, cleanup 
     DAQPBase.free_c_workspace(ws.DAQP_workspace)

@@ -87,57 +87,74 @@ function get_feedbacks(CRs; tol=1e-5)
     return Z, ids
 end
 
-function classify_regions(CRs,hps, reg2hp, ws; reg_ids = nothing, hp_ids = nothing, branches = nothing, verbose=1)
-    eps_gap=1e-6+1e-12
-    reg_ids = isnothing(reg_ids) ?  (1:length(CRs)) : findall(reg_ids)
-    isnothing(hp_ids) && (hp_ids = 1:size(hps,2))
-    nth, nh = size(hps,1)-1, length(hp_ids)
-    
-    nR = length(CRs)
-    nregs = [falses(nR) for _ in 1:nh]
-    pregs = [falses(nR) for _ in 1:nh]
+function _rows_to_bitvectors(bits)
+    return [copy(@view bits[i, :]) for i in 1:size(bits, 1)]
+end
 
-
+function _classify_regions_chunk!(nregs, pregs, CRs, hps, reg2hp, ws, reg_ids, hp_ids, branches; local_columns=false)
+    eps_gap = 1e-6 + 1e-12
     nbr = isnothing(branches) ? 0 : length(branches)
     if !isnothing(branches)
         for i = 1:nbr
-            (hid,hsign) = branches[i]
-            @views ws.A[:,1+i] .= hsign.*hps[1:nth,hid]
-            ws.b[1+i] = hsign*hps[end,hid]-eps_gap
+            hid, hsign = branches[i]
+            @views ws.A[:, 1+i] .= hsign .* hps[1:end-1, hid]
+            ws.b[1+i] = hsign * hps[end, hid] - eps_gap
         end
     end
 
-    @showprogress enabled = (verbose >= 2) desc="Presplitting" for i in reg_ids
+    for (local_idx, i) in enumerate(reg_ids)
+        col = local_columns ? local_idx : i
         mi = length(CRs[i].bth)
-        ws.A[:,1+nbr+1:1+nbr+mi] = CRs[i].Ath
-        ws.b[1+nbr+1:1+nbr+mi] = CRs[i].bth .-eps_gap
+        ws.A[:, 1+nbr+1:1+nbr+mi] = CRs[i].Ath
+        ws.b[1+nbr+1:1+nbr+mi] = CRs[i].bth .- eps_gap
 
-        for (j,hj) in enumerate(hp_ids)
-            # First check if the hp is a facet of the region
+        for (j, hj) in enumerate(hp_ids)
             asign = get(reg2hp[i], hj, nothing)
-            if !isnothing(asign) # hp is a facet of the region
+            if !isnothing(asign)
                 if asign == 1
-                    pregs[j][i] = true
+                    pregs[j, col] = true
                 else
-                    nregs[j][i] = true
+                    nregs[j, col] = true
                 end
                 continue
             end
 
-            @views slack = isnothing(branches) ? hps[1:end-1,hj]'*CRs[i].th-hps[end,hj] : NaN
+            @views slack = isnothing(branches) ? hps[1:end-1, hj]' * CRs[i].th - hps[end, hj] : NaN
 
-            # Negative
-            @views ws.A[:,1] .= .-hps[1:nth,hj]
-            @views ws.b[1] = -hps[end,hj]-eps_gap
-            (slack > eps_gap || isfeasible(ws.p, 1+nbr+mi, 0)) && (nregs[j][i] = true)
+            @views ws.A[:, 1] .= .-hps[1:end-1, hj]
+            @views ws.b[1] = -hps[end, hj] - eps_gap
+            (slack > eps_gap || isfeasible(ws.p, 1+nbr+mi, 0)) && (nregs[j, col] = true)
 
-            # Positive
-            @views ws.A[:,1] = hps[1:nth,hj]
-            @views ws.b[1] = hps[end,hj]-eps_gap
-            (slack < -eps_gap || isfeasible(ws.p, 1+nbr+mi, 0)) && (pregs[j][i] = true)
+            @views ws.A[:, 1] .= hps[1:end-1, hj]
+            @views ws.b[1] = hps[end, hj] - eps_gap
+            (slack < -eps_gap || isfeasible(ws.p, 1+nbr+mi, 0)) && (pregs[j, col] = true)
         end
     end
-    return nregs,pregs
+    return nothing
+end
+
+function classify_regions(CRs,hps, reg2hp, ws; reg_ids = nothing, hp_ids = nothing, branches = nothing, verbose=1)
+    reg_ids = isnothing(reg_ids) ? collect(1:length(CRs)) : findall(reg_ids)
+    isnothing(hp_ids) && (hp_ids = collect(1:size(hps,2)))
+
+    nR = length(CRs)
+    pids = _distributed_workers()
+    if _should_parallelize_classification(length(reg_ids), length(hp_ids), length(pids))
+        return _parallel_classify_regions(CRs, hps, reg2hp, reg_ids, hp_ids, branches, size(hps, 1) - 1, nR)
+    end
+
+    nregs = falses(length(hp_ids), nR)
+    pregs = falses(length(hp_ids), nR)
+    if verbose >= 2
+        p = Progress(length(reg_ids); desc="Presplitting")
+        for i in reg_ids
+            _classify_regions_chunk!(nregs, pregs, CRs, hps, reg2hp, ws, [i], hp_ids, branches)
+            next!(p)
+        end
+    else
+        _classify_regions_chunk!(nregs, pregs, CRs, hps, reg2hp, ws, reg_ids, hp_ids, branches)
+    end
+    return _rows_to_bitvectors(nregs), _rows_to_bitvectors(pregs)
 end
 
 function reduce_candidates(criteria,splits,ids)
@@ -239,10 +256,9 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
         return nothing
     end
 
-    ws = setup_daqp_workspace(sol.problem.n_theta)
-
-    # Do initial classification
-    nregs,pregs = classify_regions(CRs,hps,reg2hp,ws;verbose)
+    max_region_constraints = isempty(CRs) ? 1 : maximum(length(cr.bth) for cr in CRs)
+    ws = setup_daqp_workspace(sol.problem.n_theta, max(250, max_region_constraints + 1))
+    worker_pids = _initialize_classify_workers!(CRs, hps, reg2hp, sol.problem.n_theta, max_region_constraints)
 
     function get_extream_fbs(splits::Tuple{BitVector,BitVector}, fb_ids, seen_buffer, extreama)
         s_left, s_right = splits
@@ -271,69 +287,64 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
                                                  s->sum(s[1] .& s[2]),
                                                  s->max(sum.(s)...),
                                                  s->get_extream_fbs(s,fb_ids,seen_buffer,min)]
-    # Start exploration
-    hp_list, jump_list = Int[0],Int[0]
-    depth = 0
-    tree_pop! = bfs ? popfirst! : pop!
-    U = [(trues(length(CRs)),[],1)]
-    while !isempty(U)
-        reg_ids, branches, self_id = tree_pop!(U)
-        depth = max(depth,length(branches))
-        verbose >= 2 && length(U) % 50 == 0 && print_tree_build(U,jump_list,depth)
-        # Get halfplane to cut
-        hp_id, (new_nregs, new_pregs) = get_split(CRs,hps,reg2hp,reg_ids,pregs,nregs,branches,criterions,ws,
-                                                  hp_ids_bit; balancing_level)
-        if isempty(hp_id) # Should never happen, but might due to numerics
-            jump_list[self_id] = 0 # pointing at root node -> leaf
-            hp_list[self_id] = first(get_fbid(reg_ids))
-            @debug "Superfluous branch -> might be due to bad numerics"
-            continue
-        end
+    try
+        # Do initial classification
+        nregs,pregs = classify_regions(CRs,hps,reg2hp,ws;verbose)
 
-        # Update tree for current node
-        next_id = length(hp_list)+1
-        hp_list[self_id] = hp_id
-        jump_list[self_id] = next_id-self_id
-        
-        # Make room for the two new nodes that are spawned 
-        push!(hp_list,0,0)
-        push!(jump_list,0,0) 
+        # Start exploration
+        hp_list, jump_list = Int[0],Int[0]
+        depth = 0
+        tree_pop! = bfs ? popfirst! : pop!
+        U = [(trues(length(CRs)),[],1)]
+        while !isempty(U)
+            reg_ids, branches, self_id = tree_pop!(U)
+            depth = max(depth,length(branches))
+            verbose >= 2 && length(U) % 50 == 0 && print_tree_build(U,jump_list,depth)
+            hp_id, (new_nregs, new_pregs) = get_split(CRs,hps,reg2hp,reg_ids,pregs,nregs,branches,criterions,ws,
+                                                      hp_ids_bit; balancing_level)
+            if isempty(hp_id)
+                jump_list[self_id] = 0
+                hp_list[self_id] = first(get_fbid(reg_ids))
+                @debug "Superfluous branch -> might be due to bad numerics"
+                continue
+            end
 
-        # Spawn new nodes
-        for (new_regs,new_regs_comp,next, hp_sign) in [(new_nregs,new_pregs,next_id,-1), (new_pregs,new_nregs,next_id+1,1)]
-            fb_cands = get_fbid(new_regs)
-            if length(fb_cands) == 0
-                @debug "Empty region -> Defaulting to leaf node"
-                @debug "" min_val findall(new_nregs) findall(new_pregs) findall(reg_ids) branches
-                jump_list[next] = 0 # pointing at root node -> leaf
-                # Try to pick region that "disappeared", otherwise pick first region in parent
-                reg_id  = isempty(fb_cands) ? findfirst(reg_ids) : findfirst(reg_ids .* .!new_regs_comp)
-                hp_list[next] = fb_ids[reg_id]
-            elseif length(fb_cands) > 1
-                push!(U,(new_regs,branches ∪ [(hp_id,hp_sign)], next))
-            else
-                jump_list[next] = 0 # pointing at root node -> leaf
-                hp_list[next] = first(fb_cands)
+            next_id = length(hp_list)+1
+            hp_list[self_id] = hp_id
+            jump_list[self_id] = next_id-self_id
+
+            push!(hp_list,0,0)
+            push!(jump_list,0,0)
+
+            for (new_regs,new_regs_comp,next, hp_sign) in [(new_nregs,new_pregs,next_id,-1), (new_pregs,new_nregs,next_id+1,1)]
+                fb_cands = get_fbid(new_regs)
+                if length(fb_cands) == 0
+                    @debug "Empty region -> Defaulting to leaf node"
+                    @debug "" min_val findall(new_nregs) findall(new_pregs) findall(reg_ids) branches
+                    jump_list[next] = 0
+                    reg_id  = isempty(fb_cands) ? findfirst(reg_ids) : findfirst(reg_ids .* .!new_regs_comp)
+                    hp_list[next] = fb_ids[reg_id]
+                elseif length(fb_cands) > 1
+                    push!(U,(new_regs,branches ∪ [(hp_id,hp_sign)], next))
+                else
+                    jump_list[next] = 0
+                    hp_list[next] = first(fb_cands)
+                end
             end
         end
+
+        verbose >= 2 && println("")
+        hps,hp_list = remove_redundant_hps(jump_list,hp_list,hps)
+        hps = denormalize(hps,sol.scaling,sol.translation;hps=true)
+        fbs = [denormalize(f,sol.scaling,sol.translation) for f in fbs]
+        fbs_dual = dual ? get_duals(CRs,sol) : Matrix{Float64}[]
+
+        zlims = clipping ? sol.problem.out_lims : zeros(0,2)
+        return BinarySearchTree(hps,fbs,hp_list,jump_list,depth, fbs_dual, zlims)
+    finally
+        _clear_classify_workers!(worker_pids)
+        DAQPBase.free_c_workspace(ws.p)
     end
-
-    verbose >= 2 && println("")
-    # Remove superfluous HPs
-    hps,hp_list= remove_redundant_hps(jump_list,hp_list,hps)
-
-    # Denormalize 
-    hps = denormalize(hps,sol.scaling,sol.translation;hps=true)
-    fbs = [denormalize(f,sol.scaling,sol.translation) for f in fbs]
-
-    # Extract dual variables
-    fbs_dual = dual ?  get_duals(CRs,sol) : Matrix{Float64}[] # XXX sparse representation makes C-code messy...
-
-    # Cleanup
-    DAQPBase.free_c_workspace(ws.p)
-
-    zlims = clipping ? sol.problem.out_lims : zeros(0,2)
-    return BinarySearchTree(hps,fbs,hp_list,jump_list,depth, fbs_dual, zlims)
 end
 
 function evaluate(bst::BinarySearchTree,θ)

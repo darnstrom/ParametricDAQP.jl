@@ -3,6 +3,7 @@ using PolyDAQP
 using Test
 using LinearAlgebra
 using DAQPBase
+using Distributed
 const DAQP = DAQPBase
 using Random
 global templib
@@ -192,6 +193,39 @@ end
     end
     @test all(errs.< 1e-5)
     @test all(errs_clip.< 1e-5)
+end
+
+@testset "Distributed execution paths" begin
+    Random.seed!(2026)
+    mpQP,Θ = generate_mpQP(3,8,2)
+    opts = ParametricDAQP.Settings()
+    opts.verbose = 0
+
+    sol_serial,info_serial = ParametricDAQP.mpsolve(mpQP,Θ;opts)
+    bst_serial = ParametricDAQP.build_tree(sol_serial; verbose=0)
+
+    pids = addprocs(2; exeflags="--project=$(Base.active_project())")
+    try
+        Distributed.remotecall_eval(Main, pids, :(using ParametricDAQP))
+
+        sol_parallel,info_parallel = ParametricDAQP.mpsolve(mpQP,Θ;opts)
+        bst_parallel = ParametricDAQP.build_tree(sol_parallel; verbose=0)
+
+        @test info_parallel.status == info_serial.status
+        @test length(sol_parallel.CRs) == length(sol_serial.CRs)
+        @test bst_parallel.depth == bst_serial.depth
+
+        θs = 2 .* rand(2, 25) .- 1
+        for θ in eachcol(θs)
+            θv = collect(θ)
+            x_serial = evaluate_solution(sol_serial, θv)
+            x_parallel = evaluate_solution(sol_parallel, θv)
+            @test x_parallel ≈ x_serial atol=1e-6 rtol=1e-6
+            @test ParametricDAQP.evaluate(bst_parallel, θv) ≈ ParametricDAQP.evaluate(bst_serial, θv) atol=1e-6 rtol=1e-6
+        end
+    finally
+        rmprocs(pids)
+    end
 end
 
 @testset "Zero rows in A" begin
