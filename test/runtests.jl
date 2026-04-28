@@ -477,6 +477,8 @@ end
         end
 
         Base.Libc.Libdl.dlclose(libhandle)
+    end
+end
 @testset "C-generated BST with store_transpose" begin
     # Setup mpQP
     H =  [1.5064 0.4838; 0.4838 1.5258];
