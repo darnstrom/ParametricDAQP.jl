@@ -350,6 +350,38 @@ end
     sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
 end
 
+@testset "Numerically LICQ-violating active sets (triple integrator MPC)" begin
+    # Condensed MPC with |u| ≤ 1 and |x_k| ≤ 1. Some active sets violate LICQ, but cholesky still succeeds,
+    # which previously made the exploration blow up (~2.1M explored active sets)
+    nx, N = 3, 8
+    A = [1.0 1 0; 0 1 1; 0 0 1]; B = [0.0, 0, 1]
+    Φ = reduce(vcat, [A^k for k in 1:N])
+    Γ = zeros(nx*N, N)
+    for k in 1:N, j in 1:k
+        Γ[(k-1)*nx+1:k*nx, j] = A^(k-j)*B
+    end
+    G = [I(N); Γ]; E = [zeros(N,nx); Φ]; bb = ones(N + nx*N)
+    mpQP = (H=Γ'Γ+I, f=zeros(N), F=Γ'Φ, A=[G; -G], b=[bb; bb], B=[-E; E])
+    Θ = (lb=fill(-1.5,nx), ub=fill(1.5,nx))
+
+    sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts=Dict(:verbose=>0));
+    @test info.status == :Solved
+    @test info.nCR == 9
+    @test info.nExplored < 5000
+
+    # Compare with DAQP for random parameters
+    CRs = ParametricDAQP.get_critical_regions(sol)
+    nfail = 0
+    for _ in 1:1000
+        θ = Θ.lb + rand(nx).*(Θ.ub-Θ.lb)
+        x,_,exitflag,_ = DAQP.quadprog(mpQP.H, mpQP.f+mpQP.F*θ, mpQP.A, mpQP.b+mpQP.B*θ)
+        exitflag == 1 || continue
+        i = findfirst(cr -> all(cr.Ath'*θ .≤ cr.bth .+ 1e-8), CRs)
+        (isnothing(i) || norm(CRs[i].z'*[θ;1]-x) > 1e-6) && (nfail += 1)
+    end
+    @test nfail == 0
+end
+
 # Test settings
 @testset "Settings" begin
     # Setup mpQP
