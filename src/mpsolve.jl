@@ -221,6 +221,8 @@ function compute_λ_and_μ(ws,prob::Union{MPLDP,MPVI},opts)
         C = cholesky!(AHinvA_AA, opts.pivot ? RowMaximum() : NoPivot(), check=false)
         !issuccess(C) && return true, false
         U,L = C.U,C.U'
+        # Cholesky can succeed for (numerically) singular matrices -> also check pivots
+        any(abs(U[i,i]) < 1e-7 for i in 1:ws.nAS) && return true, false
         p = opts.pivot ? C.p : Int[]
     end
 
