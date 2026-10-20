@@ -1,8 +1,9 @@
 struct BinarySearchTree
     halfplanes::Matrix{Float64}
     feedbacks::Vector{Matrix{Float64}}
-    hp_list::Vector{Int}
-    jump_list::Vector{Int}
+    hp_list::Vector{Int}  # Halfplane of each internal node
+    children::Vector{Int} # Children of internal node i: children[2i-1] if above the halfplane, otherwise children[2i]
+                          # (child c > length(hp_list) is a leaf with feedback c-length(hp_list))
     depth::Int
     duals::Vector{Matrix{Float64}}
     clipping::Matrix{Float64}
@@ -98,10 +99,11 @@ function classify_regions(CRs,hps, reg2hp, ws; reg_ids = nothing, hp_ids = nothi
     pregs = [falses(nR) for _ in 1:nh]
 
 
-    nbr = isnothing(branches) ? 0 : length(branches)
+    # If the workspace cannot fit all branches, only the most recent ones are used (gives a conservative classification)
+    nbr = isnothing(branches) ? 0 : min(length(branches), size(ws.A,2)-1-maximum(length(CRs[i].bth) for i in reg_ids;init=0))
     if !isnothing(branches)
         for i = 1:nbr
-            (hid,hsign) = branches[i]
+            (hid,hsign) = branches[end-nbr+i]
             @views ws.A[:,1+i] .= hsign.*hps[1:nth,hid]
             ws.b[1+i] = hsign*hps[end,hid]-eps_gap
         end
@@ -193,17 +195,59 @@ function setup_daqp_workspace(n_theta, nc_max = 250)
     return (p=p,A=A,b=b,bl=bl,sense=sense)
 end
 
-function remove_redundant_hps(jump_list,hp_list,hps)
-    hp_rows = findall(jump_list.!== 0)
-    new_hp_ids = sort(unique(hp_list[hp_rows]))
+function remove_redundant_hps(hp_list,hps)
+    new_hp_ids = sort(unique(hp_list))
     hp_old2new = Dict(id => k for (k,id) in enumerate(new_hp_ids))
-    new_hps = hps[:,new_hp_ids]
+    return hps[:,new_hp_ids], [hp_old2new[id] for id in hp_list]
+end
 
-    new_hp_list = copy(hp_list)
-    for i in hp_rows
-        new_hp_list[i] = hp_old2new[new_hp_list[i]]
+function fold_tree(hp_list,jump_list)
+    # Convert the tree into a DAG where identical subtrees are shared and leaves are folded into their parents.
+    # Returns the halfplanes and children of the internal nodes (numbered in BFS order from the root),
+    # and the root (a leaf if the root > number of internal nodes)
+    N = length(hp_list)
+    canon = zeros(Int,N) # > 0: internal node, < 0: -feedback id
+    nodes = NTuple{3,Int}[] # (hp, child above, child below)
+    node_map = Dict{NTuple{3,Int},Int}()
+    for i in N:-1:1 # children are always stored after their parent
+        if jump_list[i] == 0
+            canon[i] = -hp_list[i]
+            continue
+        end
+        l,r = canon[i+jump_list[i]], canon[i+jump_list[i]+1]
+        if l == r # Both branches lead to identical subtrees -> node is superfluous
+            canon[i] = l
+            continue
+        end
+        canon[i] = get!(node_map,(hp_list[i],l,r)) do
+            push!(nodes,(hp_list[i],l,r))
+            length(nodes)
+        end
     end
-    return new_hps,new_hp_list
+    canon[1] < 0 && return Int[], Int[], -canon[1]
+
+    # Number the internal nodes in BFS order
+    new_id = zeros(Int,length(nodes))
+    queue = [canon[1]]
+    new_id[canon[1]] = 1
+    k = 1
+    while k <= length(queue)
+        for c in nodes[queue[k]][2:3]
+            if c > 0 && new_id[c] == 0
+                push!(queue,c)
+                new_id[c] = length(queue)
+            end
+        end
+        k += 1
+    end
+    Nint = length(queue)
+    ref(c) = c > 0 ? new_id[c] : Nint-c
+    new_hp_list = [nodes[c][1] for c in queue]
+    children = zeros(Int,2*Nint)
+    for (k,c) in enumerate(queue)
+        children[2k-1], children[2k] = ref(nodes[c][2]), ref(nodes[c][3])
+    end
+    return new_hp_list, children, 1
 end
 
 function get_duals(CRs,sol)
@@ -217,7 +261,7 @@ function get_duals(CRs,sol)
 end
 
 function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals=1e12,
-        dual=false, bfs=true, clipping=false, balancing_level=0, hp_tol = 1e-5, fb_tol=1e-5)
+        dual=false, clipping=false, balancing_level=0, hp_tol = 1e-5, fb_tol=1e-5)
     if sol.status != :Solved
         verbose > 0 && @warn "Cannot build binary search tree. Solution status: $(sol.status)"
         return nothing
@@ -229,7 +273,7 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
     if(length(CRs) == 1) # Single region => can directly return
         zlims = clipping ? sol.problem.out_lims : zeros(0,2)
         dim = size(CRs[1].Ath, 1) + 1
-        return BinarySearchTree(zeros(0,dim),[CRs[1].z],Int[1],Int[0],0,Matrix{Float64}[], zlims)
+        return BinarySearchTree(zeros(0,dim),[CRs[1].z],Int[],Int[],0,Matrix{Float64}[], zlims)
     end
     # Get halfplanes and feedbacks
     hps,reg2hp = get_halfplanes(CRs;tol=hp_tol)
@@ -244,7 +288,7 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
         return nothing
     end
 
-    ws = setup_daqp_workspace(sol.problem.n_theta)
+    ws = setup_daqp_workspace(sol.problem.n_theta, max(250,2*maximum(length(cr.bth) for cr in CRs)+1))
 
     # Do initial classification
     nregs,pregs = classify_regions(CRs,hps,reg2hp,ws;verbose)
@@ -279,10 +323,9 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
     # Start exploration
     hp_list, jump_list = Int[0],Int[0]
     depth = 0
-    tree_pop! = bfs ? popfirst! : pop!
     U = [(trues(length(CRs)),[],1)]
     while !isempty(U)
-        reg_ids, branches, self_id = tree_pop!(U)
+        reg_ids, branches, self_id = pop!(U) # DFS, since the final layout is determined in fold_tree
         depth = max(depth,length(branches))
         verbose >= 2 && length(U) % 50 == 0 && print_tree_build(U,jump_list,depth)
         # Get halfplane to cut
@@ -324,8 +367,10 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
     end
 
     verbose >= 2 && println("")
+    hp_list,children,root = fold_tree(hp_list,jump_list)
+    isempty(hp_list) && (fbs = fbs[[root]]) # Root is a leaf
     # Remove superfluous HPs
-    hps,hp_list= remove_redundant_hps(jump_list,hp_list,hps)
+    hps,hp_list= remove_redundant_hps(hp_list,hps)
 
     # Denormalize
     hps = denormalize(hps,sol.scaling,sol.translation;hps=true)
@@ -338,22 +383,18 @@ function build_tree(sol::Solution; daqp_settings = nothing, verbose=1, max_reals
     DAQPBase.free_c_workspace(ws.p)
 
     zlims = clipping ? sol.problem.out_lims : zeros(0,2)
-    return BinarySearchTree(hps,fbs,hp_list,jump_list,depth, fbs_dual, zlims)
+    return BinarySearchTree(hps,fbs,hp_list,children,depth, fbs_dual, zlims)
 end
 
 function evaluate(bst::BinarySearchTree,θ)
+    N = length(bst.hp_list)
     id =  1 # start in root note
-    next_id = id+bst.jump_list[id]
-    while next_id != id
+    while id <= N
         hid = bst.hp_list[id]
-        if bst.halfplanes[1:end-1,hid]'*θ  ≤ bst.halfplanes[end,hid]
-            id = next_id+1
-        else
-            id = next_id
-        end
-        next_id = id+bst.jump_list[id]
+        below = bst.halfplanes[1:end-1,hid]'*θ  ≤ bst.halfplanes[end,hid]
+        id = bst.children[2id-1+below]
     end
-    fid = bst.hp_list[id]
+    fid = id-N
     z = bst.feedbacks[fid]'*[θ;1]
     if(!isempty(bst.clipping))
         z = clamp.(z,bst.clipping[:,1],bst.clipping[:,2])

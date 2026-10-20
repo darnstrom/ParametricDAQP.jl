@@ -467,6 +467,67 @@ end
     end
 end
 
+@testset "BST" begin
+    n,m,nth = 6,10,3
+    mpQP,Θ = generate_mpQP(n,m,nth)
+    opts = ParametricDAQP.Settings()
+    opts.verbose = 0
+    sol,info = ParametricDAQP.mpsolve(mpQP,Θ;opts);
+    bst = ParametricDAQP.build_tree(sol)
+    N = length(bst.hp_list)
+    @test length(bst.children) == 2N
+    @test all(1 .<= bst.children .<= N+length(bst.feedbacks))
+    for k = 1:1000
+        θ = 2*rand(nth).-1
+        z = evaluate_solution(sol,θ)
+        isnothing(z) && continue
+        @test norm(ParametricDAQP.evaluate(bst,θ) - z) < 1e-6
+    end
+end
+
+@testset "Folding of BST" begin
+    # The subtree A = (hp 2 -> feedbacks 1/2) appears under the root and under node (hp 3), and should be shared:
+    #   root (hp 1) -> A, (hp 3 -> A, feedback 3)
+    hp_list   = [1, 2, 3, 1, 2, 2, 3, 1, 2]
+    jump_list = [1, 2, 3, 0, 0, 2, 0, 0, 0]
+    hps, children, root = ParametricDAQP.fold_tree(hp_list, jump_list)
+    @test root == 1
+    @test hps == [1, 2, 3]
+    @test children == [2, 3, 4, 5, 2, 6] # leaves are encoded as 3 + feedback id
+
+    # A node with two identical subtrees is superfluous (here the root -> only A remains)
+    hps, children, root = ParametricDAQP.fold_tree([1, 2, 2, 1, 2, 1, 2], [1, 2, 3, 0, 0, 0, 0])
+    @test hps == [2] && children == [2, 3] && root == 1
+
+    # Shared leaves: both children are leaves with the same feedback -> the tree collapses to a single leaf
+    hps, children, root = ParametricDAQP.fold_tree([1, 7, 7], [1, 0, 0])
+    @test isempty(hps) && isempty(children) && root == 7
+end
+
+@testset "Integer type in generated BST code" begin
+    # Synthetic tree with more nodes than fit in an unsigned short (a chain of internal nodes)
+    N = 70_000
+    children = [isodd(k) ? N+1 : (k÷2 < N ? k÷2+1 : N+1) for k in 1:2N]
+    bst = ParametricDAQP.BinarySearchTree(reshape([1.0, 0.0],2,1), [zeros(2,1)], ones(Int,N), children,
+                                          N, Matrix{Float64}[], zeros(0,2))
+    @test ParametricDAQP.evaluate(bst,[-1.0]) == zeros(1)
+
+    srcdir = tempname()
+    ParametricDAQP.codegen(bst; dir=srcdir)
+    @test occursin("typedef unsigned int c_int;", read(joinpath(srcdir,"pdaqp.h"),String))
+
+    @test_logs (:warn, r"do not fit in int_type") ParametricDAQP.codegen(bst; dir=tempname(), int_type="unsigned short")
+
+    # A small tree still uses unsigned short
+    small = ParametricDAQP.BinarySearchTree(reshape([1.0, 0.0],2,1), [zeros(2,1), reshape([0.0, 1.0],2,1)], [1], [2, 3],
+                                            1, Matrix{Float64}[], zeros(0,2))
+    @test ParametricDAQP.evaluate(small,[1.0]) == zeros(1)  # θ > 0: above the halfplane -> feedback 1
+    @test ParametricDAQP.evaluate(small,[-1.0]) == [1.0]    # θ ≤ 0: below the halfplane -> feedback 2
+    srcdir = tempname()
+    ParametricDAQP.codegen(small; dir=srcdir)
+    @test occursin("typedef unsigned short c_int;", read(joinpath(srcdir,"pdaqp.h"),String))
+end
+
 @testset "Implicit codegen with post transform" begin
     H = Float64[1 0; 0 1]
     f = zeros(2,1)

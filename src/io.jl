@@ -36,14 +36,14 @@ end
 function Base.show(io::IO, tree::BinarySearchTree)
     println("====== Binary Search Tree ======")
     println(io, "Tree depth:       $(tree.depth)")
-    println(io, "# of Nodes:       $(length(tree.jump_list))")
+    println(io, "# of Nodes:       $(length(tree.hp_list))")
 
     n_real = length(tree.halfplanes)
     !isempty(tree.feedbacks) && (n_real += length(tree.feedbacks)*length(tree.feedbacks[1]))
     !isempty(tree.duals) && (n_real+=length(tree.duals)*length(tree.duals[1]))
 
     println(io, "# of Reals:       $n_real")
-    println(io, "# of Integers:    $(2*length(tree.jump_list))")
+    println(io, "# of Integers:    $(length(tree.hp_list)+length(tree.children))")
     println(io, "# of Feedbacks:   $(length(tree.feedbacks))")
     println(io, "# of Half-planes: $(size(tree.halfplanes,2))")
 
