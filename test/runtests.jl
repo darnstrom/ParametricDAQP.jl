@@ -624,7 +624,7 @@ end
             z, λ = zeros(Cfloat, n), zeros(Cfloat, 0)
             global templib = joinpath(srcdir,testlib)
             ccall(("pdaqp_evaluate", templib), Cvoid, (Ptr{Cfloat}, Ptr{Cfloat}, Ptr{Cfloat}), Cfloat.(th),z,λ)
-            @test norm(z - zunc) < 1e-5
+            @test norm(z - zunc) < 4*eps(Float32)*norm(abs.(sol.CRs[1].z)'*abs.([th; 1]))
         end
     end
 end
